@@ -1,31 +1,243 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/* ==========================================================================
+   TRACE design tokens
+   Neutral charcoal surfaces, one restrained teal accent, functional status
+   colours only. Small radii, no blur, no decorative shadows.
+   ========================================================================== */
+@theme {
+  /* Legacy purple/indigo/violet/fuchsia utilities collapse onto the single
+     teal accent ramp so no stray purple survives anywhere in the UI. */
+  --color-indigo-50: #eef7f6; --color-indigo-100: #d6edeb; --color-indigo-200: #acd9d5;
+  --color-indigo-300: #86c3bd; --color-indigo-400: #64aaa4; --color-indigo-500: #47908a;
+  --color-indigo-600: #387772; --color-indigo-700: #2d5f5b; --color-indigo-800: #234a47;
+  --color-indigo-900: #1b3a38; --color-indigo-950: #102322;
+  --color-purple-50: #eef7f6; --color-purple-100: #d6edeb; --color-purple-200: #acd9d5;
+  --color-purple-300: #86c3bd; --color-purple-400: #64aaa4; --color-purple-500: #47908a;
+  --color-purple-600: #387772; --color-purple-700: #2d5f5b; --color-purple-800: #234a47;
+  --color-purple-900: #1b3a38; --color-purple-950: #102322;
+  --color-violet-50: #eef7f6; --color-violet-100: #d6edeb; --color-violet-200: #acd9d5;
+  --color-violet-300: #86c3bd; --color-violet-400: #64aaa4; --color-violet-500: #47908a;
+  --color-violet-600: #387772; --color-violet-700: #2d5f5b; --color-violet-800: #234a47;
+  --color-violet-900: #1b3a38; --color-violet-950: #102322;
+  --color-fuchsia-300: #b9a7b6; --color-fuchsia-400: #9b7f97; --color-fuchsia-500: #846a80;
+
+  /* Status / semantic hues, desaturated */
+  --color-emerald-300: #8fc4a6; --color-emerald-400: #6fae8c; --color-emerald-500: #4f9070;
+  --color-sky-300: #93b5d3; --color-sky-400: #739cc0; --color-sky-500: #5a82a8;
+  --color-amber-300: #d6be86; --color-amber-400: #c6a463; --color-amber-500: #ad8a47;
+  --color-rose-300: #d99a9a; --color-rose-400: #c97c7c; --color-rose-500: #b06262;
+
+  /* Neutral greys: zinc/slate become one charcoal scale */
+  --color-zinc-100: #e6e7e9; --color-zinc-200: #d4d5d8; --color-zinc-300: #b6b8bc;
+  --color-zinc-400: #8d9095; --color-zinc-500: #6c6f75; --color-zinc-600: #4f5257;
+  --color-zinc-700: #36383c; --color-zinc-800: #26272a; --color-zinc-900: #19191b;
+  --color-zinc-950: #111113;
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 3px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
+
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 4px 14px rgb(0 0 0 / 0.45);
+  --shadow-xl: 0 4px 14px rgb(0 0 0 / 0.45);
+  --shadow-2xl: 0 6px 18px rgb(0 0 0 / 0.5);
+
+  --blur-xs: 0; --blur-sm: 0; --blur-md: 0; --blur-lg: 0; --blur-xl: 0; --blur-2xl: 0; --blur-3xl: 0;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+}
+
 :root {
-  --obsidian-bg: #141416;
-  --obsidian-panel: #18181c;
-  --obsidian-sidebar: #151518;
-  --obsidian-card: #1c1c21;
-  --obsidian-border: #26262e;
-  --obsidian-border-subtle: #1e1e24;
-  --obsidian-hover: #22222a;
-  --obsidian-accent: #7c3aed;
-  --obsidian-accent-hover: #6d28d9;
-  --obsidian-text: #ececed;
-  --obsidian-muted: #8e8e98;
-  --obsidian-dim: #5c5c66;
+  --t-bg: #111113;          /* app background / workspace */
+  --t-panel: #151517;       /* side panels */
+  --t-raised: #1a1a1d;      /* inputs, menus */
+  --t-hover: #1f1f23;
+  --t-active: #24252a;
+  --t-border: #26272b;
+  --t-border-subtle: #1d1e21;
+  --t-text: #d9dadc;
+  --t-text-strong: #f0f1f2;
+  --t-muted: #8b8d93;
+  --t-dim: #5d6066;
+  --t-accent: #47908a;
+  --t-accent-strong: #5aa8a1;
+  --t-accent-bg: rgba(71, 144, 138, 0.14);
+  --t-danger: #c97c7c;
+  --t-warn: #c6a463;
+
+  /* legacy names kept for any code still reading them */
+  --obsidian-bg: var(--t-bg);
+  --obsidian-panel: var(--t-panel);
+  --obsidian-sidebar: var(--t-panel);
+  --obsidian-card: var(--t-raised);
+  --obsidian-border: var(--t-border);
+  --obsidian-border-subtle: var(--t-border-subtle);
+  --obsidian-hover: var(--t-hover);
+  --obsidian-accent: var(--t-accent);
+  --obsidian-accent-hover: var(--t-accent-strong);
+  --obsidian-text: var(--t-text);
+  --obsidian-muted: var(--t-muted);
+  --obsidian-dim: var(--t-dim);
+  color-scheme: dark;
+}
+
+/* ---------- Base component layer (shared by every screen) ---------- */
+@layer components {
+  /* Section label: tiny uppercase, used for every panel/group heading */
+  .t-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--t-dim);
+    white-space: nowrap;
+  }
+  /* Panel header strip (28px) */
+  .t-panel-head {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 0 10px;
+    border-bottom: 1px solid var(--t-border);
+    flex-shrink: 0;
+  }
+  /* Buttons */
+  .t-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--t-text);
+    background: var(--t-raised);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    white-space: nowrap;
+    transition: background-color 80ms, border-color 80ms, color 80ms;
+  }
+  .t-btn:hover { background: var(--t-hover); border-color: #313238; color: var(--t-text-strong); }
+  .t-btn:disabled { opacity: 0.45; pointer-events: none; }
+  .t-btn-primary { background: var(--t-accent); border-color: var(--t-accent); color: #fff; }
+  .t-btn-primary:hover { background: var(--t-accent-strong); border-color: var(--t-accent-strong); color: #fff; }
+  .t-btn-danger:hover { color: var(--t-danger); border-color: rgba(201, 124, 124, 0.45); }
+  /* Icon-only tool button (24x24), flat */
+  .t-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    color: var(--t-muted);
+    border-radius: 3px;
+    transition: background-color 80ms, color 80ms;
+  }
+  .t-icon-btn:hover { background: var(--t-hover); color: var(--t-text-strong); }
+  .t-icon-btn[data-active="true"] { color: var(--t-accent-strong); background: var(--t-accent-bg); }
+  .t-icon-btn svg { width: 14px; height: 14px; }
+  /* Inputs */
+  .t-input {
+    height: 24px;
+    width: 100%;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--t-text);
+    background: var(--t-bg);
+    border: 1px solid var(--t-border);
+    border-radius: 3px;
+    outline: none;
+  }
+  .t-input::placeholder { color: var(--t-dim); }
+  .t-input:focus { border-color: var(--t-accent); }
+  /* List row (22px) */
+  .t-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 22px;
+    padding: 0 8px 0 10px;
+    font-size: 12px;
+    color: var(--t-text);
+    cursor: default;
+    white-space: nowrap;
+  }
+  .t-row:hover { background: var(--t-hover); }
+  .t-row[data-selected="true"] { background: var(--t-active); color: var(--t-text-strong); box-shadow: inset 2px 0 0 var(--t-accent); }
+  /* Key / value property grid */
+  .t-kv {
+    display: grid;
+    grid-template-columns: minmax(72px, 38%) 1fr;
+    column-gap: 10px;
+    row-gap: 0;
+    font-size: 11.5px;
+  }
+  .t-kv > dt { color: var(--t-muted); padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-kv > dd { color: var(--t-text); padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; user-select: text; }
+  /* Menu / popover surface */
+  .t-menu {
+    background: var(--t-raised);
+    border: 1px solid #2e2f34;
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.5);
+    padding: 3px 0;
+    font-size: 12px;
+  }
+  .t-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 24px;
+    padding: 0 10px;
+    color: var(--t-text);
+    text-align: left;
+    border-radius: 0;
+    justify-content: flex-start;
+  }
+  .t-menu-item.justify-between, .t-menu-item:has(> div + span) { justify-content: space-between; }
+  .t-menu-item > :not(:first-child) { margin-left: 0 !important; }
+  .t-menu-item:hover { background: var(--t-accent); color: #fff; }
+  .t-menu-item svg { width: 13px !important; height: 13px !important; opacity: 0.75; color: inherit !important; fill: none !important; flex-shrink: 0; }
+  .t-menu-item > .space-x-2, .t-menu-item > div { display: flex; align-items: center; gap: 8px; }
+  .t-menu-item > div > :not(:first-child) { margin-left: 0 !important; }
+  .t-menu-sep { height: 1px; margin: 3px 0; background: var(--t-border); }
+  /* Keyboard hint */
+  .t-kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--t-dim);
+    padding: 0 4px;
+    border: 1px solid var(--t-border);
+    border-radius: 2px;
+    line-height: 14px;
+  }
+  /* Type swatch: small square colour chip for entity types */
+  .t-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 }
 
 /* Thin, elegant, modern icons (Linear / Obsidian style) */
 svg.lucide,
 .lucide {
-  stroke-width: 1.5px !important;
+  stroke-width: 1.6px !important;
 }
 
 body {
-  background-color: #141416;
-  color: #ececed;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--t-bg);
+  color: var(--t-text);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'tnum';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
@@ -46,8 +258,8 @@ body {
 
 /* Custom scrollbars matching Obsidian */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -55,8 +267,10 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 0;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -66,12 +280,12 @@ body {
 /* Markdown prose styling */
 .markdown-body {
   color: #d4d4d8;
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
 .markdown-body h1 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 600;
   color: #f4f4f5;
   margin-top: 1rem;
@@ -81,7 +295,7 @@ body {
 }
 
 .markdown-body h2 {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: #f4f4f5;
   margin-top: 1rem;
@@ -115,7 +329,7 @@ body {
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid #7c3aed;
+  border-left: 2px solid var(--t-border);
   padding-left: 0.75rem;
   color: #a1a1aa;
   margin-bottom: 0.75rem;
@@ -124,7 +338,7 @@ body {
 
 .markdown-body code {
   background: #27272a;
-  color: #f43f5e;
+  color: #c6a463;
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
   font-size: 0.85em;
@@ -153,7 +367,7 @@ body {
 }
 
 .markdown-body a {
-  color: #a78bfa;
+  color: var(--t-accent-strong);
   text-decoration: underline;
   text-underline-offset: 2px;
 }

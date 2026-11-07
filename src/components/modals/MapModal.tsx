@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useEscapeKey } from '@/components/common/Dialog';
 import { MapPin, X, ExternalLink, Search, Copy, Check } from 'lucide-react';
 
 interface MapModalProps {
@@ -24,6 +25,7 @@ export const MapModal: React.FC<MapModalProps> = ({
     setActiveQuery(locationQuery);
   }, [locationQuery]);
 
+  useEscapeKey(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleSearch = (e: React.FormEvent) => {
@@ -45,13 +47,13 @@ export const MapModal: React.FC<MapModalProps> = ({
   const osmUrl = `https://www.openstreetmap.org/search?query=${encodedQuery}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/55">
       <div
-        className="w-full max-w-3xl bg-[#141419] border border-[#2e2e3d] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150"
+        className="w-full max-w-3xl bg-[var(--t-panel)] border border-[var(--t-border)] rounded shadow-popover overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#252532] bg-[#1a1a22]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--t-border)] bg-[var(--t-hover)]">
           <div className="flex items-center space-x-2.5 truncate">
             <div className="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
               <MapPin className="w-4 h-4" />
@@ -68,12 +70,12 @@ export const MapModal: React.FC<MapModalProps> = ({
             <button
               type="button"
               onClick={handleCopy}
-              className="px-2.5 py-1 text-xs bg-[#242430] hover:bg-[#2e2e3d] text-zinc-200 border border-zinc-700/50 rounded-lg flex items-center space-x-1 transition-colors"
+              className="px-2.5 py-1 text-xs bg-[var(--t-active)] hover:bg-[var(--t-hover)] text-zinc-200 border border-zinc-700/50 rounded-lg flex items-center space-x-1 transition-colors"
               title="Copy location query"
             >
               {copied ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check className="w-3.5 h-3.5 opacity-70" />
                   <span className="text-emerald-400">Copied</span>
                 </>
               ) : (
@@ -115,7 +117,7 @@ export const MapModal: React.FC<MapModalProps> = ({
         </div>
 
         {/* Search Bar */}
-        <form onSubmit={handleSearch} className="px-5 py-2.5 bg-[#17171f] border-b border-[#252532] flex items-center gap-2">
+        <form onSubmit={handleSearch} className="px-5 py-2.5 bg-[var(--t-raised)] border-b border-[var(--t-border)] flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
             <input
@@ -123,7 +125,7 @@ export const MapModal: React.FC<MapModalProps> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search or refine address, coordinates, city, or postal code..."
-              className="w-full pl-8 pr-3 py-1.5 bg-[#101014] border border-[#2b2b3a] rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              className="w-full pl-8 pr-3 py-1.5 bg-[var(--t-bg)] border border-[var(--t-border)] rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-[var(--t-accent)]"
             />
           </div>
           <button
@@ -135,7 +137,7 @@ export const MapModal: React.FC<MapModalProps> = ({
         </form>
 
         {/* Map Canvas Embed */}
-        <div className="flex-1 bg-[#101014] relative min-h-[380px] overflow-hidden">
+        <div className="flex-1 bg-[var(--t-bg)] relative min-h-[380px] overflow-hidden">
           <iframe
             title="OpenStreetMap Location"
             src={osmEmbedUrl}
@@ -146,7 +148,7 @@ export const MapModal: React.FC<MapModalProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="px-5 py-2 bg-[#17171f] border-t border-[#252532] flex items-center justify-between text-[11px] text-zinc-400">
+        <div className="px-5 py-2 bg-[var(--t-raised)] border-t border-[var(--t-border)] flex items-center justify-between text-[11px] text-zinc-400">
           <span>Map intelligence powered by OpenStreetMap</span>
           <span className="font-mono text-zinc-500">{activeQuery}</span>
         </div>

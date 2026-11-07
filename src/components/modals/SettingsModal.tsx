@@ -1,17 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Settings as SettingsIcon,
   Folder,
   FolderOpen,
   Download,
   RefreshCw,
   Trash2,
-  Sliders,
-  Layers,
   Keyboard,
-  HardDrive,
-  Check,
 } from 'lucide-react';
 import { Workspace } from '@/types';
 
@@ -89,256 +84,140 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     window.location.reload();
   };
 
+  const storagePath = workspace?.workspacePath || workspace?.name || '~/Documents/trace';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-[#18181f] border border-obsidian-border rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/55"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-[var(--t-panel)] border border-[#2e2f34] rounded-[4px] w-full max-w-[760px] shadow-popover flex flex-col max-h-[85vh] overflow-hidden text-[12px]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-border bg-[#141419]/80">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <SettingsIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-white">Application Settings</h2>
-              <p className="text-[11px] text-obsidian-dim">Configure graph physics, storage, and preferences</p>
-            </div>
+        <div className="h-[48px] shrink-0 flex items-center justify-between pl-5 pr-3 border-b border-[var(--t-border)]">
+          <div className="min-w-0">
+            <h2 className="text-[13px] font-semibold text-zinc-100 leading-tight">Application Settings</h2>
+            <p className="text-[11px] text-zinc-500 leading-tight mt-0.5">Storage, graph and keyboard preferences</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-obsidian-dim hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <X className="w-4 h-4" />
+          <button type="button" onClick={onClose} className="t-icon-btn" title="Close  (Esc)">
+            <X />
           </button>
         </div>
 
-        {/* Settings Body */}
-        <div className="p-5 overflow-y-auto space-y-6">
-          {/* File System & Explorer Section */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-obsidian-muted flex items-center space-x-2">
-              <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Workspace & File System</span>
-            </h3>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <Section title="Workspace & File System">
+            <Row
+              label={isDesktop ? 'Working directory' : 'Browser offline storage'}
+              description={isDesktop ? 'Folder where case Markdown files are stored' : 'Cases are stored in this browser profile'}
+              stacked
+            >
+              <div
+                className="h-[26px] px-2.5 flex items-center rounded-[3px] bg-[var(--t-bg)] border border-[var(--t-border)] font-mono text-[11px] text-zinc-400 truncate select-all"
+                title={storagePath}
+              >
+                {storagePath}
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {isDesktop && onSelectDirectory && (
+                  <button type="button" onClick={onSelectDirectory} className="t-btn">
+                    <Folder className="w-3.5 h-3.5 opacity-70" />
+                    Change folder
+                  </button>
+                )}
+                {onOpenInExplorer && (
+                  <button type="button" onClick={() => onOpenInExplorer(activeProjectId)} className="t-btn">
+                    <FolderOpen className="w-3.5 h-3.5 opacity-70" />
+                    {isDesktop ? 'Show in Finder' : 'Download project files'}
+                  </button>
+                )}
+              </div>
+            </Row>
+            <Row label="Export project" description="Canonical Markdown structure as a .zip archive">
+              <button type="button" onClick={onExportZip} className="t-btn" disabled={!activeProjectId}>
+                <Download className="w-3.5 h-3.5 opacity-70" />
+                Export .zip
+              </button>
+            </Row>
+            <Row label="Search index" description="Rebuild the SQLite full-text index from Markdown files">
+              <button type="button" onClick={onRebuildIndex} className="t-btn" disabled={!activeProjectId}>
+                <RefreshCw className="w-3.5 h-3.5 opacity-70" />
+                Rebuild index
+              </button>
+            </Row>
+          </Section>
 
-            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-white flex items-center space-x-2">
-                    <span>{isDesktop ? 'Working Directory' : 'Browser Offline Storage'}</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                      trace
-                    </span>
-                  </div>
-                  <div
-                    className="text-[11px] text-obsidian-dim mt-1 truncate font-mono bg-black/30 px-2 py-1 rounded border border-white/5 select-all"
-                    title={workspace?.workspacePath || workspace?.name || 'Documents/trace'}
+          <Section title="Graph & Physics">
+            <Row label="Interactive repulsion physics" description="Nearby nodes repel when you drag an entity">
+              <Toggle on={physicsBounce} onClick={handlePhysicsToggle} />
+            </Row>
+            <Row label="Glow on hover" description="Soft circular highlight around the hovered node">
+              <Toggle on={auraGlow} onClick={handleAuraToggle} />
+            </Row>
+            <Row label="Default graph layout" description="Layout used when a case is opened">
+              <div className="flex items-stretch h-[24px] border border-[var(--t-border)] rounded-[3px] overflow-hidden">
+                {[
+                  { id: 'cose', label: 'Force' },
+                  { id: 'concentric', label: 'Radial' },
+                  { id: 'breadthfirst', label: 'Tree' },
+                ].map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => handleLayoutChange(l.id)}
+                    className={`px-3 text-[11.5px] border-l border-[var(--t-border)] first:border-l-0 ${
+                      defaultLayout === l.id ? 'bg-[var(--t-active)] text-zinc-100' : 'text-zinc-500 hover:text-zinc-200 hover:bg-[var(--t-hover)]'
+                    }`}
                   >
-                    {workspace?.workspacePath || workspace?.name || '~/Documents/trace'}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                  {isDesktop && onSelectDirectory && (
-                    <button
-                      type="button"
-                      onClick={onSelectDirectory}
-                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 flex items-center space-x-1.5 text-xs font-medium transition-all"
-                      title="Choose working directory"
-                    >
-                      <Folder className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Change Folder</span>
-                    </button>
-                  )}
-
-                  {onOpenInExplorer && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenInExplorer(activeProjectId)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1.5 text-xs font-medium transition-all shadow-sm"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>{isDesktop ? 'Show in Finder' : 'Download Project ZIP'}</span>
-                    </button>
-                  )}
-                </div>
+                    {l.label}
+                  </button>
+                ))}
               </div>
+            </Row>
+          </Section>
 
-              <div className="flex items-center gap-2 pt-1 border-t border-white/5">
-                <button
-                  type="button"
-                  onClick={onExportZip}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center space-x-1.5 text-xs transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export Full Project (.zip)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onRebuildIndex}
-                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center space-x-1.5 text-xs transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Rebuild SQLite FTS Index</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Graph Visualization & Physics */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-obsidian-muted flex items-center space-x-2">
-              <Sliders className="w-3.5 h-3.5 text-amber-400" />
-              <span>Graph & Physics</span>
-            </h3>
-
-            <div className="space-y-2">
-              {/* Physics Bounce Toggle */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                <div>
-                  <div className="text-xs font-medium text-white">Interactive Repulsion Physics</div>
-                  <div className="text-[11px] text-obsidian-dim">
-                    Nearby nodes gently bounce and repel away when dragging an entity
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handlePhysicsToggle}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                    physicsBounce ? 'bg-indigo-600 justify-end' : 'bg-zinc-700 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow" />
-                </button>
-              </div>
-
-              {/* Aura Glow Toggle */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                <div>
-                  <div className="text-xs font-medium text-white">Circular Glowing Aura on Hover</div>
-                  <div className="text-[11px] text-obsidian-dim">
-                    Soft circular glow highlighting nodes without square background boxes
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAuraToggle}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                    auraGlow ? 'bg-indigo-600 justify-end' : 'bg-zinc-700 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow" />
-                </button>
-              </div>
-
-              {/* Default Layout */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                <div>
-                  <div className="text-xs font-medium text-white">Default Graph Layout</div>
-                  <div className="text-[11px] text-obsidian-dim">Algorithm used when opening projects</div>
-                </div>
-                <div className="flex items-center space-x-1">
-                  {['cose', 'concentric', 'breadthfirst'].map((layout) => (
-                    <button
-                      key={layout}
-                      type="button"
-                      onClick={() => handleLayoutChange(layout)}
-                      className={`px-2 py-1 text-xs rounded-md uppercase font-mono transition-colors ${
-                        defaultLayout === layout
-                          ? 'bg-indigo-600 text-white font-semibold'
-                          : 'bg-white/5 text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {layout}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Productivity & Shortcuts */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-obsidian-muted flex items-center space-x-2">
-              <Keyboard className="w-3.5 h-3.5 text-sky-400" />
-              <span>Keyboard & Navigation</span>
-            </h3>
-
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-medium text-white">Keyboard Shortcuts Cheat Sheet</div>
-                <div className="text-[11px] text-obsidian-dim">View all hotkeys for quick access</div>
-              </div>
+          <Section title="Keyboard & Navigation">
+            <Row label="Keyboard shortcuts" description="All hotkeys in one sheet">
               <button
                 type="button"
                 onClick={() => {
                   onClose();
                   onOpenShortcuts();
                 }}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white flex items-center space-x-1.5 text-xs font-medium transition-colors"
+                className="t-btn"
               >
-                <Keyboard className="w-3.5 h-3.5" />
-                <span>View Shortcuts (?)</span>
+                <Keyboard className="w-3.5 h-3.5 opacity-70" />
+                View shortcuts
+                <span className="t-kbd ml-0.5">?</span>
               </button>
-            </div>
-          </div>
+            </Row>
+          </Section>
 
-          {/* Danger Zone */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-400/80 flex items-center space-x-2">
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Danger Zone</span>
-            </h3>
-
-            <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/20 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-medium text-rose-200">Reset Local Application Cache</div>
-                <div className="text-[11px] text-rose-400/70">
-                  Clears local storage and re-seeds default sample project
-                </div>
-              </div>
-
+          <Section title="Danger Zone" danger>
+            <Row label="Reset local application data" description="Clears local storage and re-seeds the sample project. Cannot be undone.">
               <button
                 type="button"
                 onClick={handleClearData}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  resetConfirm
-                    ? 'bg-rose-600 text-white animate-pulse'
-                    : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30'
-                }`}
+                className={`t-btn ${resetConfirm ? '!bg-rose-500/80 !border-rose-500/80 !text-white' : '!text-rose-400 hover:!border-rose-500/50'}`}
               >
-                {resetConfirm ? 'Click to Confirm Reset' : 'Reset Storage'}
+                <Trash2 className="w-3.5 h-3.5 opacity-80" />
+                {resetConfirm ? 'Click again to confirm' : 'Reset storage'}
               </button>
-            </div>
-          </div>
+            </Row>
+          </Section>
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-obsidian-border bg-[#141419]/80 flex items-center justify-between">
-          <div className="flex flex-col select-text min-w-0 pr-4">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-semibold text-zinc-300">Trace</span>
-              <span className="text-[10px] font-mono text-zinc-500">
-                {__APP_VERSION__}
+        <div className="h-[48px] shrink-0 px-5 border-t border-[var(--t-border)] flex items-center justify-between gap-4">
+          <div className="min-w-0 flex items-baseline gap-2 select-text">
+            <span className="text-[12px] font-semibold text-zinc-300 shrink-0">Trace</span>
+            <span className="text-[10.5px] font-mono text-zinc-500 shrink-0">{__APP_VERSION__}</span>
+            {__BUILD_HASH__ && (
+              <span className="text-[10.5px] font-mono text-zinc-600 truncate" title={__BUILD_HASH__}>
+                sha256 {__BUILD_HASH__}
               </span>
-            </div>
-            <div className="text-[10px] text-zinc-500 font-mono mt-0.5 flex items-center space-x-1 truncate max-w-sm sm:max-w-md">
-              <span className="shrink-0">sha256:</span>
-              <span
-                className="text-zinc-400 select-all font-mono truncate"
-                title={typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'dev-local'}
-              >
-                {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'dev-local'}
-              </span>
-            </div>
+            )}
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors shadow-sm shrink-0"
-          >
+          <button type="button" onClick={onClose} className="t-btn t-btn-primary !px-4 shrink-0">
             Done
           </button>
         </div>
@@ -346,3 +225,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
+
+/** Settings section: label above one bordered group of rows. */
+const Section: React.FC<{ title: string; danger?: boolean; children: React.ReactNode }> = ({ title, danger, children }) => (
+  <section>
+    <h3 className={`t-label mb-2 ${danger ? '!text-rose-400/80' : '!text-zinc-500'}`}>{title}</h3>
+    <div
+      className={`rounded-[4px] border divide-y ${
+        danger ? 'border-rose-500/25 divide-rose-500/15 bg-rose-950/10' : 'border-[var(--t-border)] divide-[var(--t-border)] bg-[var(--t-raised)]/40'
+      }`}
+    >
+      {children}
+    </div>
+  </section>
+);
+
+/** One setting: label + description on the left, control right-aligned (or below when stacked). */
+const Row: React.FC<{ label: string; description?: string; stacked?: boolean; children: React.ReactNode }> = ({
+  label,
+  description,
+  stacked,
+  children,
+}) =>
+  stacked ? (
+    <div className="px-4 py-3">
+      <div className="text-[12px] font-medium text-zinc-200">{label}</div>
+      {description && <div className="text-[11px] text-zinc-500 mt-0.5 mb-2">{description}</div>}
+      {children}
+    </div>
+  ) : (
+    <div className="px-4 py-3 flex items-center gap-6 min-h-[52px]">
+      <div className="flex-1 min-w-0">
+        <div className="text-[12px] font-medium text-zinc-200">{label}</div>
+        {description && <div className="text-[11px] text-zinc-500 mt-0.5">{description}</div>}
+      </div>
+      <div className="shrink-0 flex items-center">{children}</div>
+    </div>
+  );
+
+const Toggle: React.FC<{ on: boolean; onClick: () => void }> = ({ on, onClick }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    onClick={onClick}
+    className={`w-8 h-[18px] rounded-full p-[2px] flex transition-colors ${on ? 'bg-[var(--t-accent)] justify-end' : 'bg-zinc-700 justify-start'}`}
+  >
+    <span className="w-[14px] h-[14px] rounded-full bg-white" />
+  </button>
+);

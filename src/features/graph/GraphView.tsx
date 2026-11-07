@@ -10,6 +10,7 @@ import {
   RELATIONSHIP_STATUSES,
 } from '@/types';
 import { EntityIcon, getEntityTypeColor, getEntityTypeLabel } from '@/components/common/EntityIcon';
+import { StatusGlyph } from '@/components/common/StatusBadge';
 import {
   Maximize2,
   RotateCcw,
@@ -33,50 +34,43 @@ import {
   X,
   Tag,
   ChevronDown,
-  Sparkles,
+  ScanSearch,
   CheckCheck,
+  Activity,
+  Boxes,
+  Zap,
+  MousePointer,
+  Grid,
+  CircleDot,
+  GitFork,
+  ArrowDownLeft,
+  ArrowUpRight,
+  FolderTree,
 } from 'lucide-react';
 import { RelationshipDiscoveryModal } from '@/components/modals/RelationshipDiscoveryModal';
+import { EntityPalette } from './EntityPalette';
+import { TransformConsole } from './TransformConsole';
+import { getTransformsForEntity, TRANSFORMS_REGISTRY } from '@/services/transforms/registry';
+import { TransformDefinition, TransformLogEntry } from '@/services/transforms/types';
+import {
+  computeForceLayout,
+  defaultIterations,
+  selectVisibleLabels,
+  type LabelCandidate,
+  type LayoutEdge,
+  type LayoutNode,
+} from './forceLayout';
+import {
+  GRAPH_BG,
+  GRAPH_EDGE_COLORS,
+  GRAPH_EDGE_STYLE,
+  GRAPH_NODE_COLORS,
+  GRAPH_SELECT,
+  graphNodeColor,
+  nodeDiameter,
+} from './graphTheme';
 
-// Helper to convert hex color to 50% grayscale (filter: grayscale(50%))
-function applyGrayscale(hex: string, amount: number = 0.5): string {
-  const cleanHex = hex.replace('#', '');
-  if (cleanHex.length !== 6 && cleanHex.length !== 3) return hex;
-  const fullHex = cleanHex.length === 3
-    ? cleanHex.split('').map((c) => c + c).join('')
-    : cleanHex;
-  const num = parseInt(fullHex, 16);
-  if (isNaN(num)) return hex;
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-  const rMuted = Math.round(r * (1 - amount) + gray * amount);
-  const gMuted = Math.round(g * (1 - amount) + gray * amount);
-  const bMuted = Math.round(b * (1 - amount) + gray * amount);
-  return `#${((1 << 24) + (rMuted << 16) + (gMuted << 8) + bMuted).toString(16).slice(1)}`;
-}
-
-// Elegant document/note SVG icon data URIs for Cytoscape note nodes
-const NOTE_ICON_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="32" viewBox="0 0 24 24" fill="#241b10" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="16" y1="13" x2="8" y2="13"/>
-    <line x1="16" y1="17" x2="8" y2="17"/>
-    <polyline points="10 9 9 9 8 9"/>
-  </svg>`
-)}`;
-
-const NOTE_HOVER_ICON_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="32" viewBox="0 0 24 24" fill="#d97706" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="16" y1="13" x2="8" y2="13"/>
-    <line x1="16" y1="17" x2="8" y2="17"/>
-    <polyline points="10 9 9 9 8 9"/>
-  </svg>`
-)}`;
+const ToolSep: React.FC = () => <div className="w-px h-4 bg-[var(--t-border)] mx-1 shrink-0" />;
 
 interface GraphViewProps {
   projectData: ProjectData;
@@ -104,7 +98,32 @@ interface GraphViewProps {
       evidence: string[];
     }>
   ) => void;
+  onBatchAddEntitiesAndRelationships?: (
+    newEntities: Array<{
+      id?: string;
+      name: string;
+      type: EntityType;
+      attributes?: Record<string, any>;
+      tags?: string[];
+      position?: { x: number; y: number };
+    }>,
+    newRels: Array<{
+      source_entity: string;
+      target_entity: string;
+      type: string;
+      status?: RelationshipStatus;
+      confidence?: number;
+      evidence?: string[];
+    }>,
+    newPositions?: Record<string, { x: number; y: number }>
+  ) => Promise<void> | void;
+  onCreateEntityAtPosition?: (
+    type: EntityType,
+    pos: { x: number; y: number },
+    name?: string
+  ) => Promise<void> | void;
   onConfirmRelationship?: (relationshipId: string) => void;
+  activeRunningTransformId?: string;
 }
 
 interface ContextMenuState {
@@ -140,7 +159,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
   initialPositions,
   onSavePositions,
   onBatchAddRelationships,
+  onBatchAddEntitiesAndRelationships,
+  onCreateEntityAtPosition,
   onConfirmRelationship,
+  activeRunningTransformId,
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +171,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   // Discovery Modal state
   const [discoveryModalOpen, setDiscoveryModalOpen] = useState<boolean>(false);
+
+  // Maltego UX States
+  const [isPaletteOpen, setIsPaletteOpen] = useState<boolean>(false);
+  const [sizeByDegree, setSizeByDegree] = useState<boolean>(true);
+  const [clusterLeaves, setClusterLeaves] = useState<boolean>(false);
+  const [selectionMenuOpen, setSelectionMenuOpen] = useState<boolean>(false);
+  const [transformLogs, setTransformLogs] = useState<TransformLogEntry[]>([]);
+  const [isRunningTransform, setIsRunningTransform] = useState<boolean>(false);
+  const [activeRunningTransform, setActiveRunningTransform] = useState<{
+    name: string;
+    entityName: string;
+    entityId: string;
+  } | null>(null);
+
+  // Dropped entity prompt from Palette
+  const [droppedEntityPrompt, setDroppedEntityPrompt] = useState<{
+    isOpen: boolean;
+    type: EntityType;
+    position: { x: number; y: number };
+    screenX: number;
+    screenY: number;
+  } | null>(null);
+  const [droppedEntityName, setDroppedEntityName] = useState<string>('');
 
   // Responsive container width tracking
   const [containerWidth, setContainerWidth] = useState<number>(1000);
@@ -168,17 +213,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const isCompact = containerWidth < 820;
-  const isNarrow = containerWidth < 680;
+  // Toolbar density tiers: labels go first, then the layout segment, then secondary toggles.
+  const isMedium = containerWidth < 1180;
+  const isCompact = containerWidth < 900;
+  const isNarrow = containerWidth < 700;
 
   // Graph Controls State
-  const [layoutName, setLayoutName] = useState<string>('cose');
+  const [layoutName, setLayoutName] = useState<string>('force');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterPanelOpen, setFilterPanelOpen] = useState<boolean>(false);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [hiddenNodeIds, setHiddenNodeIds] = useState<Set<string>>(new Set());
   const [showNotesOnGraph, setShowNotesOnGraph] = useState<boolean>(true);
-  const [showEdgeLabels, setShowEdgeLabels] = useState<boolean>(true);
+  const [showEdgeLabels, setShowEdgeLabels] = useState<boolean>(false);
 
   // Entity Type and Status Filters
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<Set<EntityType>>(
@@ -591,23 +638,107 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   // Build Cytoscape Elements (Entities + Notes + Relationships)
   const elements = useMemo(() => {
-    // Entity nodes (with photo support)
-    const entityNodes = projectData.entities
-      .filter((e) => selectedEntityTypes.has(e.type) && !hiddenNodeIds.has(e.id))
-      .map((entity) => {
-        const color = getEntityTypeColor(entity.type);
-        const savedPos = initialPositions?.[entity.id];
-        const photo =
-          entity.attributes?.photo || entity.attributes?.image || entity.attributes?.avatar;
+    const relSrc = (r: Relationship) => r.source_entity || (r as any).source;
+    const relTgt = (r: Relationship) => r.target_entity || (r as any).target;
+    const entityById = new Map<string, Entity>();
+    const entityByName = new Map<string, Entity>();
+    projectData.entities.forEach((e) => {
+      entityById.set(e.id, e);
+      entityByName.set(e.name.toLowerCase(), e);
+    });
 
+    // Degree drives node size, label priority and layout mass.
+    const degreeMap = new Map<string, number>();
+    (projectData.relationships || []).forEach((r) => {
+      const s = relSrc(r);
+      const t = relTgt(r);
+      if (s) degreeMap.set(s, (degreeMap.get(s) || 0) + 1);
+      if (t) degreeMap.set(t, (degreeMap.get(t) || 0) + 1);
+    });
+    let maxDegree = 1;
+    degreeMap.forEach((d) => {
+      if (d > maxDegree) maxDegree = d;
+    });
+    const sizeFor = (deg: number) => (sizeByDegree ? nodeDiameter(deg, maxDegree) : 10);
+
+    // Detect leaves for Collection Nodes (if clusterLeaves is enabled)
+    const clusteredLeafIds = new Set<string>();
+    const collectionNodes: any[] = [];
+    const collectionEdges: any[] = [];
+
+    if (clusterLeaves) {
+      const parentToTypeLeaves = new Map<string, Map<EntityType, Entity[]>>();
+      (projectData.relationships || []).forEach((r) => {
+        const s = relSrc(r);
+        const t = relTgt(r);
+        if (!s || !t) return;
+        if ((degreeMap.get(t) || 0) === 1 && (degreeMap.get(s) || 0) > 1) {
+          const targetEntity = entityById.get(t);
+          if (targetEntity && selectedEntityTypes.has(targetEntity.type) && !hiddenNodeIds.has(targetEntity.id)) {
+            let typeMap = parentToTypeLeaves.get(s);
+            if (!typeMap) parentToTypeLeaves.set(s, (typeMap = new Map()));
+            const list = typeMap.get(targetEntity.type) || [];
+            list.push(targetEntity);
+            typeMap.set(targetEntity.type, list);
+          }
+        }
+      });
+
+      parentToTypeLeaves.forEach((typeMap, parentId) => {
+        typeMap.forEach((leafEntities, type) => {
+          if (leafEntities.length < 3) return;
+          const collectionId = `coll-${parentId}-${type}`;
+          leafEntities.forEach((l) => clusteredLeafIds.add(l.id));
+          const color = graphNodeColor(type);
+          const savedPos = initialPositions?.[collectionId];
+          collectionNodes.push({
+            group: 'nodes' as const,
+            data: {
+              id: collectionId,
+              label: `${leafEntities.length} × ${getEntityTypeLabel(type)}`,
+              type,
+              color,
+              nodeSize: 16,
+              degree: leafEntities.length,
+              isCollection: true,
+              collectionCount: leafEntities.length,
+              collectionLeaves: leafEntities.map((e) => e.name).join(', '),
+            },
+            position: savedPos ? { x: savedPos.x, y: savedPos.y } : undefined,
+          });
+          collectionEdges.push({
+            group: 'edges' as const,
+            data: {
+              id: `edge-${collectionId}`,
+              source: parentId,
+              target: collectionId,
+              label: `contains (${leafEntities.length})`,
+              status: 'confirmed',
+              verified: true,
+              color: GRAPH_EDGE_COLORS.confirmed,
+              lineStyle: 'dashed',
+              directed: false,
+            },
+          });
+        });
+      });
+    }
+
+    const entityNodes = projectData.entities
+      .filter((e) => selectedEntityTypes.has(e.type) && !hiddenNodeIds.has(e.id) && !clusteredLeafIds.has(e.id))
+      .map((entity) => {
+        const savedPos = initialPositions?.[entity.id];
+        const photo = entity.attributes?.photo || entity.attributes?.image || entity.attributes?.avatar;
+        const deg = degreeMap.get(entity.id) || 0;
         return {
           group: 'nodes' as const,
           data: {
             id: entity.id,
             label: entity.name,
             type: entity.type,
-            color,
-            mutedColor: applyGrayscale(color, 0.5),
+            color: graphNodeColor(entity.type),
+            nodeSize: sizeFor(deg),
+            degree: deg,
             imageUrl: photo || undefined,
             aliases: entity.aliases ? entity.aliases.join(', ') : '',
             isNote: false,
@@ -616,22 +747,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
         };
       });
 
-    // Note nodes (if toggled on)
     const noteNodes =
       showNotesOnGraph && projectData.notes
         ? projectData.notes
             .filter((n) => !hiddenNodeIds.has(n.id))
             .map((note) => {
               const savedPos = initialPositions?.[note.id];
-              const noteColor = '#f59e0b';
+              const noteDeg = degreeMap.get(note.id) || 0;
               return {
                 group: 'nodes' as const,
                 data: {
                   id: note.id,
                   label: note.title,
                   type: 'note',
-                  color: noteColor,
-                  mutedColor: applyGrayscale(noteColor, 0.5),
+                  color: GRAPH_NODE_COLORS.note,
+                  nodeSize: Math.max(10, sizeFor(noteDeg) - 2),
+                  degree: noteDeg,
                   isNote: true,
                   aliases: '',
                 },
@@ -640,37 +771,28 @@ export const GraphView: React.FC<GraphViewProps> = ({
             })
         : [];
 
-    const allNodes = [...entityNodes, ...noteNodes];
+    const allNodes = [...entityNodes, ...collectionNodes, ...noteNodes];
     const activeNodeIds = new Set(allNodes.map((n) => n.data.id));
 
-    // Entity-to-Entity Relationships
     const entityEdges = (projectData.relationships || [])
       .filter((rel) => {
-        const s = rel.source_entity || (rel as any).source;
-        const t = rel.target_entity || (rel as any).target;
-        return (
-          activeNodeIds.has(s) &&
-          activeNodeIds.has(t) &&
-          (!rel.status || selectedStatuses.has(rel.status))
-        );
+        const s = relSrc(rel);
+        const t = relTgt(rel);
+        return activeNodeIds.has(s) && activeNodeIds.has(t) && (!rel.status || selectedStatuses.has(rel.status));
       })
       .map((rel) => {
-        const s = rel.source_entity || (rel as any).source;
-        const t = rel.target_entity || (rel as any).target;
-        const statusConfig = RELATIONSHIP_STATUSES.find((st) => st.status === rel.status);
-        const lineColor = statusConfig ? statusConfig.color : '#38bdf8';
-        const lineStyle = statusConfig ? statusConfig.borderStyle : 'solid';
-
+        const status: RelationshipStatus = rel.status || 'confirmed';
         return {
           group: 'edges' as const,
           data: {
             id: rel.id,
-            source: s,
-            target: t,
+            source: relSrc(rel),
+            target: relTgt(rel),
             label: rel.type || '',
-            status: rel.status || 'confirmed',
-            color: lineColor,
-            lineStyle,
+            status,
+            verified: status === 'confirmed' || status === 'supported',
+            color: GRAPH_EDGE_COLORS[status] ?? GRAPH_EDGE_COLORS.confirmed,
+            lineStyle: GRAPH_EDGE_STYLE[status] ?? 'solid',
             directed: rel.directed !== false,
             confidence: rel.confidence,
           },
@@ -685,10 +807,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const noteBody = note.markdownBody || (note as any).raw || '';
         const matches = Array.from(noteBody.matchAll(/\[\[(.*?)\]\]/g));
         matches.forEach((m: any, idx) => {
-          const targetNameOrId = m[1].trim();
-          const targetEntity = projectData.entities.find(
-            (e) => e.id === targetNameOrId || e.name.toLowerCase() === targetNameOrId.toLowerCase()
-          );
+          const key = m[1].trim();
+          const targetEntity = entityById.get(key) || entityByName.get(key.toLowerCase());
           if (targetEntity && activeNodeIds.has(targetEntity.id)) {
             noteEdges.push({
               group: 'edges' as const,
@@ -698,9 +818,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 target: targetEntity.id,
                 label: 'mentions',
                 status: 'confirmed',
-                color: '#f59e0b',
-                lineStyle: 'dashed',
-                directed: true,
+                verified: false,
+                color: GRAPH_EDGE_COLORS.candidate,
+                lineStyle: 'dotted',
+                directed: false,
               },
             });
           }
@@ -708,7 +829,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
     }
 
-    return [...allNodes, ...entityEdges, ...noteEdges];
+    return [...allNodes, ...entityEdges, ...collectionEdges, ...noteEdges];
   }, [
     projectData.entities,
     projectData.relationships,
@@ -718,7 +839,46 @@ export const GraphView: React.FC<GraphViewProps> = ({
     hiddenNodeIds,
     showNotesOnGraph,
     initialPositions,
+    sizeByDegree,
+    clusterLeaves,
   ]);
+
+  const graphSearchRef = useRef<HTMLInputElement>(null);
+  const hiddenFilterCount =
+    ENTITY_TYPES.length - selectedEntityTypes.size + (RELATIONSHIP_STATUSES.length - selectedStatuses.size);
+  const typeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    projectData.entities.forEach((e) => m.set(e.type, (m.get(e.type) || 0) + 1));
+    return m;
+  }, [projectData.entities]);
+  const visibleCounts = useMemo(() => {
+    let nodes = 0;
+    let edges = 0;
+    elements.forEach((el) => (el.group === 'nodes' ? nodes++ : edges++));
+    return { nodes, edges };
+  }, [elements]);
+
+  // Workspace keyboard shortcuts (ignored while typing in a field)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!rootRef.current || rootRef.current.offsetParent === null) return; // graph tab not visible
+      if (e.key === '/') {
+        e.preventDefault();
+        graphSearchRef.current?.focus();
+      } else if (e.key === 'f' || e.key === 'F') {
+        cyRef.current?.fit(undefined, 30);
+      } else if (e.key === 'l' || e.key === 'L') {
+        runLayout(layoutNameRef.current);
+      } else if (e.key === 'n' || e.key === 'N') {
+        callbacksRef.current && onCreateEntity();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   // Initialize Cytoscape
   useEffect(() => {
@@ -732,35 +892,39 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'node',
           style: {
             'shape': 'ellipse',
-            'background-color': 'data(mutedColor)',
-            'background-opacity': 0.95,
-            'border-width': 2,
-            'border-color': 'data(mutedColor)',
-            'border-opacity': 1,
-            'label': 'data(label)',
-            'color': '#cbd5e1',
-            'font-size': '10px',
+            'background-color': 'data(color)',
+            'background-opacity': 0.92,
+            'border-width': 0,
+            'label': '',
+            'color': '#b4b8c0',
+            'font-size': 9,
             'font-family': 'Inter, system-ui, sans-serif',
             'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'text-wrap': 'wrap',
-            'text-max-width': '105px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'text-outline-color': '#111115',
-            'text-outline-width': 2.5,
-            'text-outline-opacity': 0.95,
-            'width': 28,
-            'height': 28,
+            'text-halign': 'center',
+            'text-margin-y': 3,
+            'text-wrap': 'ellipsis',
+            'text-max-width': '140px',
+            'text-background-color': '#0b0b0e',
+            'text-background-opacity': 0.72,
+            'text-background-padding': '1.5px',
+            'text-background-shape': 'roundrectangle',
+            'min-zoomed-font-size': 6,
+            'width': 'data(nodeSize)' as any,
+            'height': 'data(nodeSize)' as any,
             'overlay-opacity': 0,
             'underlay-opacity': 0,
-            'transition-property':
-              'background-color, background-opacity, border-color, border-width, border-opacity, width, height, color, font-size, text-outline-width, text-outline-color',
-            'transition-duration': '0.2s' as any,
-            'transition-timing-function': 'ease-in-out' as any,
+            'z-index': 10,
           },
         },
-        // Entities with photos / avatars
+        // LOD-controlled label visibility
+        {
+          selector: 'node.label-on',
+          style: { 'label': 'data(label)' },
+        },
+        {
+          selector: 'node[degree >= 6]',
+          style: { 'z-index': 20, 'color': '#d0d3d9' },
+        },
         {
           selector: 'node[imageUrl]',
           style: {
@@ -768,284 +932,192 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'background-fit': 'cover',
             'background-clip': 'node',
             'background-opacity': 1,
-            'border-width': 2.5,
-            'border-color': 'data(mutedColor)',
-            'border-opacity': 1,
-            'width': 30,
-            'height': 30,
-            'underlay-opacity': 0,
-            'transition-property':
-              'background-color, background-opacity, border-color, border-width, border-opacity, width, height',
-            'transition-duration': '0.2s' as any,
-            'transition-timing-function': 'ease-in-out' as any,
+            'border-width': 1,
+            'border-color': 'data(color)',
           },
         },
-        // Note nodes with custom document SVG icon
+        {
+          selector: 'node[?isCollection]',
+          style: {
+            'shape': 'round-rectangle',
+            'background-color': '#1a1a20',
+            'border-width': 1,
+            'border-style': 'dashed',
+            'border-color': 'data(color)',
+            'border-opacity': 0.8,
+          },
+        },
         {
           selector: 'node[?isNote]',
           style: {
             'shape': 'round-rectangle',
-            'background-image': NOTE_ICON_SVG,
-            'background-fit': 'contain',
-            'background-clip': 'none',
-            'background-opacity': 1,
-            'background-color': '#20180d',
-            'border-width': 2,
-            'border-color': '#f59e0b',
-            'border-opacity': 0.9,
-            'width': 26,
-            'height': 30,
-            'color': '#fde68a',
-            'font-size': '10px',
-            'text-wrap': 'wrap',
-            'text-max-width': '120px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'text-outline-color': '#111115',
-            'text-outline-width': 2.5,
-            'text-outline-opacity': 0.95,
-            'underlay-opacity': 0,
-            'transition-property':
-              'background-color, background-opacity, border-color, border-width, border-opacity, width, height',
-            'transition-duration': '0.2s' as any,
-            'transition-timing-function': 'ease-in-out' as any,
+            'background-color': 'data(color)',
+            'background-opacity': 0.7,
           },
         },
-        // Hover state (grayscale 0% -> full 100% vibrant color, smooth .2s transition, no glow)
+        {
+          selector: 'node.transform-running',
+          style: {
+            'underlay-color': '#c9a24a',
+            'underlay-padding': 6,
+            'underlay-opacity': 0.35,
+            'underlay-shape': 'ellipse',
+          },
+        },
         {
           selector: 'node.hovered',
           style: {
-            'background-color': 'data(color)',
+            'label': 'data(label)',
             'background-opacity': 1,
-            'border-width': 3,
-            'border-color': '#ffffff',
-            'border-opacity': 1,
-            'width': 34,
-            'height': 34,
-            'color': '#ffffff',
-            'font-size': '11.5px',
-            'font-weight': 'bold',
-            'text-outline-color': '#09090b',
-            'text-outline-width': 3,
-            'text-outline-opacity': 1,
-            'text-wrap': 'wrap',
-            'text-max-width': '135px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'underlay-opacity': 0,
+            'border-width': 1.5,
+            'border-color': '#d4d7dd',
+            'border-opacity': 0.9,
+            'color': '#f1f2f4',
             'z-index': 9999,
-          },
-        },
-        {
-          selector: 'node[?isNote].hovered',
-          style: {
-            'background-image': NOTE_HOVER_ICON_SVG,
-            'background-color': '#d97706',
-            'border-width': 3,
-            'border-color': '#ffffff',
-            'border-opacity': 1,
-            'width': 32,
-            'height': 36,
-            'color': '#ffffff',
-            'font-size': '11.5px',
-            'font-weight': 'bold',
-            'text-outline-color': '#09090b',
-            'text-outline-width': 3,
-            'text-outline-opacity': 1,
-            'text-wrap': 'wrap',
-            'text-max-width': '135px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'underlay-opacity': 0,
-            'z-index': 9999,
-          },
-        },
-        {
-          selector: 'node:selected',
-          style: {
-            'background-color': 'data(color)',
-            'background-opacity': 1,
-            'border-width': 3.5,
-            'border-color': '#ffffff',
-            'border-opacity': 1,
-            'width': 36,
-            'height': 36,
-            'underlay-opacity': 0,
-            'color': '#ffffff',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '135px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'z-index': 1000,
-          },
-        },
-        {
-          selector: 'node[?isNote]:selected',
-          style: {
-            'background-image': NOTE_HOVER_ICON_SVG,
-            'background-color': '#d97706',
-            'border-width': 3.5,
-            'border-color': '#ffffff',
-            'border-opacity': 1,
-            'width': 32,
-            'height': 36,
-            'underlay-opacity': 0,
-            'color': '#ffffff',
-            'font-weight': 'bold',
-            'text-wrap': 'wrap',
-            'text-max-width': '135px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'z-index': 1000,
           },
         },
         {
           selector: 'node.hovered-neighbor',
+          style: { 'background-opacity': 1, 'z-index': 500 },
+        },
+        {
+          selector: 'node:selected',
           style: {
-            'border-width': 2.5,
-            'border-color': 'data(color)',
+            'label': 'data(label)',
+            'background-opacity': 1,
+            'border-width': 2,
+            'border-color': GRAPH_SELECT,
             'border-opacity': 1,
-            'background-opacity': 0.95,
-            'color': '#f4f4f5',
-            'font-weight': 'bold',
-            'font-size': '10.5px',
-            'text-wrap': 'wrap',
-            'text-max-width': '120px',
-            'text-justification': 'center',
-            'line-height': 1.15,
-            'z-index': 500,
+            'underlay-color': GRAPH_SELECT,
+            'underlay-padding': 4,
+            'underlay-opacity': 0.12,
+            'underlay-shape': 'ellipse',
+            'color': '#ffffff',
+            'font-weight': 600 as any,
+            'z-index': 10000,
           },
         },
         {
           selector: 'node.connecting-source',
-          style: {
-            'border-width': 4,
-            'border-color': '#c084fc',
-            'border-opacity': 1,
-            'background-color': 'data(color)',
-            'z-index': 99999,
-          },
+          style: { 'border-width': 2, 'border-color': '#a99bd6', 'z-index': 99999 },
         },
         {
           selector: 'node.connecting-target',
-          style: {
-            'border-width': 4,
-            'border-color': '#34d399',
-            'border-opacity': 1,
-            'background-color': 'data(color)',
-            'width': 36,
-            'height': 36,
-            'z-index': 99999,
-          },
+          style: { 'border-width': 2, 'border-color': '#7fb79a', 'z-index': 99999 },
         },
-        // Edge styles with explicit line styles (fixed)
         {
           selector: 'edge',
           style: {
-            'width': 2,
+            'width': 0.8,
             'line-color': 'data(color)',
+            'line-opacity': 0.4,
+            'curve-style': 'haystack',
+            'haystack-radius': 0,
+            'label': '',
+            'font-size': 8,
+            'font-family': 'Inter, system-ui, sans-serif',
+            'color': '#9ea3ab',
+            'text-rotation': 'autorotate',
+            'text-background-opacity': 0.8,
+            'text-background-color': '#0b0b0e',
+            'text-background-padding': '1.5px',
+            'text-background-shape': 'roundrectangle',
+            'min-zoomed-font-size': 7,
+            'z-index': 1,
+          },
+        },
+        // Unverified relationships: thinner, fainter, broken line
+        {
+          selector: 'edge[!verified]',
+          style: { 'line-opacity': 0.22, 'width': 0.7 },
+        },
+        { selector: 'edge[lineStyle = "dashed"]', style: { 'line-style': 'dashed', 'line-dash-pattern': [4, 3] } },
+        { selector: 'edge[lineStyle = "dotted"]', style: { 'line-style': 'dotted' } },
+        { selector: 'edge[status = "rejected"]', style: { 'line-opacity': 0.18 } },
+        // Emphasised edges (hover / selection neighbourhood / zoomed-in labels)
+        {
+          selector: 'edge.emph',
+          style: {
             'curve-style': 'bezier',
+            'width': 1.3,
+            'line-opacity': 0.85,
+            'z-index': 600,
+          },
+        },
+        {
+          selector: 'edge.emph[?directed]',
+          style: {
             'target-arrow-shape': 'triangle',
             'target-arrow-color': 'data(color)',
-            'arrow-scale': 1.1,
-            'label': 'data(label)',
-            'font-size': '8.5px',
-            'font-family': 'Inter, system-ui, sans-serif',
-            'color': '#cbd5e1',
-            'text-rotation': 'autorotate',
-            'text-background-opacity': 0.85,
-            'text-background-color': '#121216',
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle',
-            'min-zoomed-font-size': 8,
-            'opacity': 0.85,
-            'z-index': 10,
+            'arrow-scale': 0.55,
           },
         },
         {
-          selector: 'edge.labels-hidden:not(.hovered-connected):not(:selected)',
-          style: {
-            'label': '',
-          },
-        },
-        {
-          selector: 'edge[lineStyle = "dashed"]',
-          style: {
-            'line-style': 'dashed',
-          },
-        },
-        {
-          selector: 'edge[lineStyle = "dotted"]',
-          style: {
-            'line-style': 'dotted',
-          },
-        },
-        {
-          selector: 'edge[lineStyle = "solid"]',
-          style: {
-            'line-style': 'solid',
-          },
-        },
-        {
-          selector: 'edge[!directed]',
-          style: {
-            'target-arrow-shape': 'none',
-          },
+          selector: 'edge.edge-label-on',
+          style: { 'label': 'data(label)' },
         },
         {
           selector: 'edge.hovered-connected',
           style: {
-            'width': 3,
-            'opacity': 1,
+            'curve-style': 'bezier',
+            'width': 1.4,
+            'line-opacity': 0.9,
             'label': 'data(label)',
-            'color': '#ffffff',
-            'font-size': '10px',
-            'text-background-opacity': 0.95,
-            'text-background-color': '#181820',
-            'text-background-padding': '3px',
-            'font-weight': 'bold',
+            'color': '#d4d7dd',
             'z-index': 800,
           },
         },
         {
+          selector: 'edge.hovered-connected[?directed]',
+          style: { 'target-arrow-shape': 'triangle', 'target-arrow-color': 'data(color)', 'arrow-scale': 0.6 },
+        },
+        {
           selector: 'edge:selected',
           style: {
-            'width': 3.5,
-            'opacity': 1,
+            'curve-style': 'bezier',
+            'width': 1.8,
+            'line-color': GRAPH_SELECT,
+            'line-opacity': 1,
             'label': 'data(label)',
             'color': '#ffffff',
-            'font-size': '10px',
-            'underlay-color': '#7c3aed',
-            'underlay-padding': 3,
-            'underlay-opacity': 0.4,
+            'target-arrow-color': GRAPH_SELECT,
             'z-index': 900,
           },
         },
         {
-          selector: '.faded',
-          style: {
-            'opacity': 0.12,
-            'text-opacity': 0.08,
-          },
+          selector: 'edge:selected[?directed]',
+          style: { 'target-arrow-shape': 'triangle', 'arrow-scale': 0.7 },
+        },
+        // Context dimming: selection neighbourhood
+        {
+          selector: 'node.dimmed',
+          style: { 'opacity': 0.22 },
         },
         {
-          selector: '.highlighted',
-          style: {
-            'opacity': 1,
-            'text-opacity': 1,
-            'border-width': 3,
-            'border-color': '#a855f7',
-            'border-opacity': 1,
-          },
+          selector: 'edge.dimmed',
+          style: { 'opacity': 0.12 },
+        },
+        // Focus / search fading (stronger)
+        {
+          selector: '.faded',
+          style: { 'opacity': 0.08, 'text-opacity': 0 },
+        },
+        {
+          selector: 'node.highlighted',
+          style: { 'opacity': 1, 'label': 'data(label)' },
+        },
+        {
+          selector: 'edge.highlighted',
+          style: { 'opacity': 1, 'line-opacity': 0.8, 'curve-style': 'bezier' },
         },
       ],
-      layout: {
-        name: 'preset',
-      },
-      minZoom: 0.15,
-      maxZoom: 3.5,
+      layout: { name: 'preset' },
+      minZoom: 0.05,
+      maxZoom: 4,
       wheelSensitivity: 0.25,
+      textureOnViewport: false,
+      hideEdgesOnViewport: false,
+      pixelRatio: 'auto',
     });
 
     cyRef.current = cy;
@@ -1097,31 +1169,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
         return;
       }
       const draggedNode = evt.target;
-      const dpos = draggedNode.position();
-      const repulsionRadius = 110;
-
-      // Apply soft repulsive push to nearby nodes if graph is reasonably sized
-      const allNodes = cy.nodes();
-      if (allNodes.length <= 250) {
-        allNodes.forEach((other) => {
-          if (other.id() === draggedNode.id()) return;
-          const opos = other.position();
-          const dx = opos.x - dpos.x;
-          if (Math.abs(dx) >= repulsionRadius) return;
-          const dy = opos.y - dpos.y;
-          if (Math.abs(dy) >= repulsionRadius) return;
-          const distSq = dx * dx + dy * dy;
-
-          if (distSq > 0 && distSq < repulsionRadius * repulsionRadius) {
-            const dist = Math.sqrt(distSq);
-            const push = ((repulsionRadius - dist) / repulsionRadius) * 4.5;
-            other.position({
-              x: opos.x + (dx / dist) * push,
-              y: opos.y + (dy / dist) * push,
-            });
-          }
-        });
-      }
 
       // Update hover tooltip position if dragging the hovered node
       const container = containerRef.current;
@@ -1145,9 +1192,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       cy.elements().removeClass('hovered hovered-connected hovered-neighbor');
 
-      node.addClass('hovered');
-      node.connectedEdges().addClass('hovered-connected');
-      node.neighborhood('node').addClass('hovered-neighbor');
+      cy.batch(() => {
+        node.addClass('hovered');
+        node.connectedEdges().addClass('hovered-connected');
+        node.neighborhood('node').addClass('hovered-neighbor label-on');
+      });
 
       const container = containerRef.current;
       if (container) {
@@ -1165,6 +1214,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     cy.on('mouseout', 'node', () => {
       cy.elements().removeClass('hovered hovered-connected hovered-neighbor');
       setHoveredNode(null);
+      scheduleLabelUpdate();
     });
 
     // Hover handlers for edges
@@ -1318,62 +1368,232 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, []);
 
-  // Sync elements into Cytoscape incrementally
+  // Sync elements into Cytoscape incrementally (diff instead of teardown so
+  // existing node positions, selection and viewport survive data changes).
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+
+    const nextIds = new Set<string>();
+    elements.forEach((el) => nextIds.add(el.data.id));
+    const added: any[] = [];
+
+    cy.batch(() => {
+      cy.elements().forEach((ele) => {
+        if (!nextIds.has(ele.id())) ele.remove();
+      });
+      elements.forEach((el) => {
+        const existing = cy.getElementById(el.data.id);
+        if (existing.nonempty()) {
+          if (
+            el.group === 'edges' &&
+            (existing.data('source') !== el.data.source || existing.data('target') !== el.data.target)
+          ) {
+            existing.remove();
+            added.push(el);
+          } else {
+            existing.data(el.data);
+          }
+        } else {
+          added.push(el);
+        }
+      });
+      if (added.length) {
+        // nodes before edges
+        cy.add(added.filter((e) => e.group === 'nodes'));
+        cy.add(added.filter((e) => e.group === 'edges'));
+      }
+    });
+
+    const newNodes = added.filter((e) => e.group === 'nodes');
+    const unpositioned = newNodes.filter((e) => !e.position);
+    if (unpositioned.length > 0) {
+      const total = cy.nodes().length;
+      // Incremental: pin existing nodes and only settle newcomers, unless the
+      // graph is mostly new (initial load) — then lay out everything.
+      const incremental = total - unpositioned.length >= Math.max(3, unpositioned.length);
+      const unposIds = new Set(unpositioned.map((e) => e.data.id));
+      runLayout(layoutNameRef.current, {
+        pinIds: incremental ? cy.nodes().filter((n) => !unposIds.has(n.id())).map((n) => n.id()) : undefined,
+        fit: !isInitialFitDoneRef.current || !incremental,
+      });
+      isInitialFitDoneRef.current = true;
+    } else if (!isInitialFitDoneRef.current && elements.length > 0) {
+      try {
+        cy.fit(undefined, 30);
+        isInitialFitDoneRef.current = true;
+      } catch (e) {}
+    }
+    scheduleLabelUpdate();
+  }, [elements]);
+
+  // ---- Label level-of-detail -------------------------------------------
+  const labelRafRef = useRef<number | null>(null);
+  const labelFontRef = useRef<number>(0);
+  const baseStyleRef = useRef<any[] | null>(null);
+  const edgeLabelsRef = useRef<boolean>(showEdgeLabels);
+  useEffect(() => {
+    edgeLabelsRef.current = showEdgeLabels;
+  });
+  const updateLabels = () => {
+    labelRafRef.current = null;
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    const zoom = cy.zoom();
+    const w = cy.width();
+    const h = cy.height();
+    const selected = cy.$('node:selected');
+    const selNeighborhood = selected.closedNeighborhood();
+    const forcedIds = new Set<string>();
+    selNeighborhood.nodes().forEach((n) => {
+      forcedIds.add(n.id());
+    });
+    cy.$('node.highlighted').forEach((n) => {
+      forcedIds.add(n.id());
+    });
+
+    const candidates: LabelCandidate[] = [];
+    cy.nodes().forEach((n) => {
+      if (n.hasClass('faded') || n.hasClass('dimmed')) return;
+      const label = n.data('label');
+      if (!label) return;
+      const rp = n.renderedPosition();
+      const deg = n.data('degree') || 0;
+      // Selection neighbourhood / search hits go first, but still respect collisions.
+      const boosted = forcedIds.has(n.id());
+      candidates.push({
+        id: n.id(),
+        x: rp.x,
+        y: rp.y,
+        r: (n.data('nodeSize') || 10) * zoom * 0.5,
+        label,
+        priority: deg + (n.data('isCollection') ? 2 : 0) + (boosted ? 10000 : 0),
+        forced: n.selected() || n.hasClass('hovered'),
+      });
+    });
+    const visible = selectVisibleLabels(candidates, {
+      zoom,
+      fontPx: 10.5,
+      viewW: w,
+      viewH: h,
+    });
+
+    // Keep label text at a constant, small on-screen size regardless of zoom.
+    // Quantise zoom (~19% steps) so restyling happens rarely.
+    const zq = Math.pow(2, Math.round(Math.log2(zoom) * 4) / 4);
+    const fontBucket = Math.round(Math.min(80, Math.max(4, 10.5 / zq)) * 100) / 100;
+    if (fontBucket !== labelFontRef.current) {
+      labelFontRef.current = fontBucket;
+      if (!baseStyleRef.current) baseStyleRef.current = (cy.style() as any).json();
+      (cy.style() as any)
+        .fromJson([
+          ...(baseStyleRef.current || []),
+          { selector: 'node', style: { 'font-size': fontBucket, 'text-margin-y': Math.max(1.5, 3 / zq), 'text-max-width': `${Math.round(170 * (fontBucket / 10.5))}px`, 'text-background-padding': `${Math.max(1.5, 2 / zq)}px` } },
+          { selector: 'edge', style: { 'font-size': fontBucket * 0.85, 'width': Math.max(0.8, 0.7 / zq) } },
+          { selector: 'edge.emph, edge.hovered-connected', style: { 'width': Math.max(1.3, 1.2 / zq) } },
+          { selector: 'edge:selected', style: { 'width': Math.max(1.8, 1.6 / zq) } },
+        ])
+        .update();
+    }
+
+    const showEdgeLabelsZoomed = edgeLabelsRef.current && zoom >= 1.3;
+    cy.batch(() => {
+      cy.nodes().forEach((n) => {
+        const on = visible.has(n.id());
+        if (on !== n.hasClass('label-on')) n.toggleClass('label-on', on);
+      });
+      // Edges: emphasise selection neighbourhood; labels only where useful.
+      const selEdges = selected.connectedEdges();
+      cy.edges().forEach((e) => {
+        const isSel = selEdges.contains(e);
+        const emph = isSel || (zoom >= 1.6 && !e.hasClass('dimmed'));
+        if (emph !== e.hasClass('emph')) e.toggleClass('emph', emph);
+        const lbl = (isSel && selected.length === 1 && zoom >= 0.6) || (showEdgeLabelsZoomed && !e.hasClass('dimmed') && !e.hasClass('faded') && visible.has(e.source().id()) && visible.has(e.target().id()));
+        if (lbl !== e.hasClass('edge-label-on')) e.toggleClass('edge-label-on', lbl);
+      });
+    });
+  };
+  const scheduleLabelUpdate = () => {
+    if (labelRafRef.current != null) return;
+    labelRafRef.current = requestAnimationFrame(updateLabels);
+  };
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    // throttle viewport-driven updates (labels recompute after pan/zoom settles a frame)
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onViewport = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(scheduleLabelUpdate, cy.nodes().length > 600 ? 90 : 16);
+    };
+    const onFree = () => scheduleLabelUpdate();
+    // Never blow small graphs up to giant circles when fitting.
+    const MAX_FIT_ZOOM = 1.8;
+    const origFit = cy.fit.bind(cy);
+    (cy as any).fit = (eles?: any, padding?: number) => {
+      origFit(eles, padding);
+      if (cy.zoom() > MAX_FIT_ZOOM) {
+        const bb = (eles && eles.length ? eles : cy.elements()).boundingBox();
+        cy.zoom(MAX_FIT_ZOOM);
+        cy.pan({
+          x: cy.width() / 2 - MAX_FIT_ZOOM * (bb.x1 + bb.w / 2),
+          y: cy.height() / 2 - MAX_FIT_ZOOM * (bb.y1 + bb.h / 2),
+        });
+      }
+      return cy;
+    };
+    cy.on('viewport', onViewport);
+    cy.on('free position', 'node', onFree);
+    cy.on('select unselect', onFree);
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (labelRafRef.current != null) cancelAnimationFrame(labelRafRef.current);
+      labelRafRef.current = null;
+      cy.off('viewport', onViewport);
+      cy.off('free position', 'node', onFree);
+      cy.off('select unselect', onFree);
+    };
+  }, []);
+
+  useEffect(() => {
+    scheduleLabelUpdate();
+  }, [showEdgeLabels]);
+
+  // Sync active selection from props + neighbourhood emphasis
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || cy.destroyed()) return;
 
     cy.batch(() => {
-      cy.elements().remove();
-      cy.add(elements);
-      if (!showEdgeLabels) {
-        cy.edges().addClass('labels-hidden');
+      cy.elements().unselect();
+      cy.elements().removeClass('dimmed');
+      if (selectedEntityId) {
+        const node = cy.getElementById(selectedEntityId);
+        if (node.nonempty()) {
+          node.select();
+          const hood = node.closedNeighborhood();
+          cy.elements().difference(hood).addClass('dimmed');
+        }
+      } else if (selectedRelationshipId) {
+        const edge = cy.getElementById(selectedRelationshipId);
+        if (edge.nonempty()) {
+          edge.select();
+          const hood = edge.union(edge.connectedNodes());
+          cy.elements().difference(hood).addClass('dimmed');
+        }
       }
     });
+    scheduleLabelUpdate();
+  }, [selectedEntityId, selectedRelationshipId, elements]);
 
-    const hasPreset = elements.some((el) => el.group === 'nodes' && el.position);
-    if (!hasPreset && elements.length > 0) {
-      runLayout(layoutName);
-    } else if (!isInitialFitDoneRef.current && elements.length > 0) {
-      try {
-        cy.fit(undefined, 40);
-        isInitialFitDoneRef.current = true;
-      } catch (e) {}
-    }
-  }, [elements]);
-
-  // Toggle edge labels visibility
+  const layoutNameRef = useRef<string>(layoutName);
   useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || cy.destroyed()) return;
-    if (showEdgeLabels) {
-      cy.edges().removeClass('labels-hidden');
-    } else {
-      cy.edges().addClass('labels-hidden');
-    }
-  }, [showEdgeLabels]);
+    layoutNameRef.current = layoutName;
+  });
 
-  // Sync active selection from props
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || cy.destroyed()) return;
-
-    cy.elements().unselect();
-    if (selectedEntityId) {
-      const node = cy.getElementById(selectedEntityId);
-      if (node.nonempty()) {
-        node.select();
-      }
-    } else if (selectedRelationshipId) {
-      const edge = cy.getElementById(selectedRelationshipId);
-      if (edge.nonempty()) {
-        edge.select();
-      }
-    }
-  }, [selectedEntityId, selectedRelationshipId]);
-
-  // Run Layout with high interactive repulsion and label dimension awareness
-  const runLayout = (name: string) => {
+  /** Run the selected layout. `force` uses the in-house ForceAtlas2 engine. */
+  const runLayout = (name: string, opts: { pinIds?: string[]; fit?: boolean } = {}) => {
     const cy = cyRef.current;
     if (!cy || cy.destroyed()) return;
 
@@ -1384,67 +1604,314 @@ export const GraphView: React.FC<GraphViewProps> = ({
       activeLayoutRef.current = null;
     }
 
-    let layoutOptions: any = { name, animate: true, animationDuration: 400 };
-    if (name === 'cose') {
+    const fit = opts.fit !== false;
+    const nodeCount = cy.nodes().length;
+    const animate = nodeCount <= 400;
+
+    if (name === 'force' || name === 'cose') {
+      const pin = new Set(opts.pinIds || []);
+      const lnodes: LayoutNode[] = cy.nodes().map((n) => {
+        const p = n.position();
+        const isPinned = pin.has(n.id());
+        return {
+          id: n.id(),
+          // When re-running from scratch, still start from current positions
+          // so the result stays recognisable (stable layouts).
+          x: isPinned || pin.size === 0 ? p.x : undefined,
+          y: isPinned || pin.size === 0 ? p.y : undefined,
+          size: (n.data('nodeSize') || 10) / 2,
+          fixed: isPinned,
+        };
+      });
+      // Fresh layout from scratch when the graph has never been placed (all at origin)
+      if (pin.size === 0) {
+        const allOrigin = lnodes.every((n) => Math.abs(n.x || 0) < 1e-6 && Math.abs(n.y || 0) < 1e-6);
+        if (allOrigin) lnodes.forEach((n) => { n.x = undefined; n.y = undefined; });
+      }
+      const ledges: LayoutEdge[] = cy.edges().map((e) => ({
+        source: e.source().id(),
+        target: e.target().id(),
+        weight: e.data('verified') === false ? 0.6 : 1,
+      }));
+      const positions = computeForceLayout(lnodes, ledges, {
+        iterations: pin.size > 0 ? Math.min(150, defaultIterations(nodeCount)) : undefined,
+      });
+      const layout = cy.layout({
+        name: 'preset',
+        positions: (node: any) => positions[node.id()],
+        animate,
+        animationDuration: 380,
+        animationEasing: 'ease-out-cubic',
+        fit: false,
+      } as any);
+      activeLayoutRef.current = layout;
+      layout.on('layoutstop', () => {
+        if (activeLayoutRef.current === layout) activeLayoutRef.current = null;
+        if (fit) cy.fit(undefined, 30);
+        scheduleLabelUpdate();
+      });
+      layout.run();
+      return;
+    }
+
+    let layoutOptions: any = { name, animate, animationDuration: 380, fit, padding: 30 };
+    if (name === 'concentric') {
       layoutOptions = {
-        name: 'cose',
-        animate: true,
-        animationDuration: 450,
-        nodeDimensionsIncludeLabels: true,
-        nodeRepulsion: () => 450000,
-        idealEdgeLength: () => 140,
-        edgeElasticity: () => 100,
-        nestingFactor: 1.2,
-        gravity: 0.15,
-        numIter: 500,
-        initialTemp: 200,
-        coolingFactor: 0.95,
-        minTemp: 1.0,
-        componentSpacing: 100,
-        nodeOverlap: 25,
-        padding: 60,
-      };
-    } else if (name === 'concentric') {
-      layoutOptions = {
-        name: 'concentric',
-        animate: true,
-        animationDuration: 450,
-        padding: 60,
-        nodeDimensionsIncludeLabels: true,
-        minNodeSpacing: 65,
-        spacingFactor: 1.75,
+        ...layoutOptions,
+        minNodeSpacing: 14,
         avoidOverlap: true,
         equidistant: false,
-        concentric: (node: any) => {
-          return node.degree();
-        },
+        concentric: (node: any) => node.degree(),
         levelWidth: () => 2,
       };
     } else if (name === 'breadthfirst') {
-      layoutOptions = {
-        name: 'breadthfirst',
-        animate: true,
-        animationDuration: 450,
-        directed: true,
-        padding: 60,
-        nodeDimensionsIncludeLabels: true,
-        spacingFactor: 1.75,
-        avoidOverlap: true,
-      };
+      layoutOptions = { ...layoutOptions, directed: true, spacingFactor: 0.9, avoidOverlap: true };
+    } else if (name === 'grid') {
+      layoutOptions = { ...layoutOptions, spacingFactor: 0.7, avoidOverlap: true };
     }
 
     try {
       const layout = cy.layout(layoutOptions);
       activeLayoutRef.current = layout;
       layout.on('layoutstop', () => {
-        if (activeLayoutRef.current === layout) {
-          activeLayoutRef.current = null;
-        }
+        if (activeLayoutRef.current === layout) activeLayoutRef.current = null;
+        scheduleLabelUpdate();
       });
       layout.run();
     } catch (e) {
       console.warn('Layout execution error:', e);
     }
+  };
+
+  // Execute Maltego OSINT Transform
+  const handleExecuteTransform = async (
+    targetEntity: Entity,
+    transform: TransformDefinition
+  ) => {
+    const cy = cyRef.current;
+    setIsRunningTransform(true);
+    setActiveRunningTransform({
+      name: transform.name,
+      entityName: targetEntity.name,
+      entityId: targetEntity.id,
+    });
+
+    const startTime = Date.now();
+    const logId = `log-${Date.now().toString(36)}`;
+
+    // Add running log
+    const initialEntry: TransformLogEntry = {
+      id: logId,
+      timestamp: new Date().toLocaleTimeString(),
+      transformId: transform.id,
+      transformName: transform.name,
+      entityName: targetEntity.name,
+      entityType: targetEntity.type,
+      status: 'running',
+      message: `Executing "${transform.name}"...`,
+    };
+
+    setTransformLogs((prev) => [initialEntry, ...prev]);
+
+    // Add glowing radar indicator to node
+    if (cy && !cy.destroyed()) {
+      cy.getElementById(targetEntity.id).addClass('transform-running');
+    }
+
+    try {
+      const result = await transform.run(targetEntity, {
+        allEntities: projectData.entities,
+        log: (msg) => {
+          setTransformLogs((prev) =>
+            prev.map((l) => (l.id === logId ? { ...l, message: msg } : l))
+          );
+        },
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      // Calculate radial coordinates around parent node
+      const parentPos = initialPositions?.[targetEntity.id] ||
+        (cy ? cy.getElementById(targetEntity.id).position() : { x: 300, y: 300 });
+
+      const newPositions: Record<string, { x: number; y: number }> = {};
+      const newEntitiesWithPos = result.newEntities.map((ent, idx) => {
+        const total = result.newEntities.length || 1;
+        const angle = (idx / total) * 2 * Math.PI + 0.2;
+        const radius = 130 + (idx % 2) * 45;
+        const pos = {
+          x: Math.round(parentPos.x + Math.cos(angle) * radius),
+          y: Math.round(parentPos.y + Math.sin(angle) * radius),
+        };
+        const entId = `ent-${Date.now().toString(36)}-${idx}`;
+        newPositions[entId] = pos;
+        return {
+          ...ent,
+          id: entId,
+          position: pos,
+        };
+      });
+
+      const newRels = result.newRelationships.map((r) => ({
+        source_entity: targetEntity.id,
+        target_entity: r.targetEntityName,
+        type: r.type,
+        status: r.status || 'confirmed',
+        confidence: r.confidence ?? 1.0,
+        evidence: r.evidence || [`Discovered via ${transform.name}`],
+      }));
+
+      if (onBatchAddEntitiesAndRelationships) {
+        await onBatchAddEntitiesAndRelationships(newEntitiesWithPos, newRels, newPositions);
+      }
+
+      const logMsg =
+        result.logs.length > 0
+          ? result.logs.join(' • ')
+          : `Discovered ${result.newEntities.length} entities and ${result.newRelationships.length} relationships`;
+
+      setTransformLogs((prev) =>
+        prev.map((l) =>
+          l.id === logId
+            ? {
+                ...l,
+                status: 'success',
+                message: logMsg,
+                entitiesAdded: result.newEntities.length,
+                relationshipsAdded: result.newRelationships.length,
+                durationMs,
+              }
+            : l
+        )
+      );
+
+      showToast(`Transform complete: +${result.newEntities.length} entities discovered`);
+    } catch (err: any) {
+      const durationMs = Date.now() - startTime;
+      const errorMsg = err.message || String(err);
+
+      setTransformLogs((prev) =>
+        prev.map((l) =>
+          l.id === logId
+            ? {
+                ...l,
+                status: 'error',
+                message: `Failed: ${errorMsg}`,
+                durationMs,
+              }
+            : l
+        )
+      );
+
+      showToast(`Transform error: ${errorMsg}`);
+    } finally {
+      setIsRunningTransform(false);
+      setActiveRunningTransform(null);
+      if (cy && !cy.destroyed()) {
+        cy.getElementById(targetEntity.id).removeClass('transform-running');
+      }
+    }
+  };
+
+  // Maltego Selection Helpers
+  const selectNeighbors = (nodeId: string, direction: 'all' | 'in' | 'out' = 'all') => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    const node = cy.getElementById(nodeId);
+    if (!node || node.empty()) return;
+
+    cy.elements().unselect();
+    node.select();
+
+    if (direction === 'all') {
+      node.neighborhood().select();
+    } else if (direction === 'in') {
+      node.incomers().select();
+    } else if (direction === 'out') {
+      node.outgoers().select();
+    }
+    showToast(`Selected neighbors (${direction})`);
+  };
+
+  const selectByType = (entityType: string) => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    cy.elements().unselect();
+    const matched = cy.nodes(`[type = "${entityType}"]`);
+    matched.select();
+    showToast(`Selected ${matched.length} ${entityType} node(s)`);
+  };
+
+  const invertSelection = () => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    const unselectedNodes = cy.nodes(':unselected');
+    cy.nodes(':selected').unselect();
+    unselectedNodes.select();
+    showToast(`Inverted selection: ${unselectedNodes.length} nodes selected`);
+  };
+
+  const findShortestPathBetweenSelected = () => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    const selected = cy.nodes(':selected');
+    if (selected.length < 2) {
+      showToast('Select at least 2 nodes to find shortest path (Cmd/Ctrl + Click)');
+      return;
+    }
+    const aStar = cy.elements().aStar({
+      root: selected[0],
+      goal: selected[1],
+      directed: false,
+    });
+    if (aStar.found) {
+      cy.elements().unselect();
+      aStar.path.select();
+      showToast(`Shortest path found: ${aStar.distance} hops`);
+    } else {
+      showToast('No path exists between selected nodes');
+    }
+  };
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    const type = e.dataTransfer.getData('application/trace-entity-type') as EntityType;
+    if (type && containerRef.current && cyRef.current) {
+      e.preventDefault();
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const cy = cyRef.current;
+      const pan = cy.pan();
+      const zoom = cy.zoom();
+      const canvasX = Math.round((e.clientX - containerRect.left - pan.x) / zoom);
+      const canvasY = Math.round((e.clientY - containerRect.top - pan.y) / zoom);
+
+      setDroppedEntityPrompt({
+        isOpen: true,
+        type,
+        position: { x: canvasX, y: canvasY },
+        screenX: e.clientX,
+        screenY: e.clientY,
+      });
+      setDroppedEntityName('');
+    }
+  };
+
+  const handlePaletteSelectType = (type: EntityType) => {
+    const cy = cyRef.current;
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const pan = cy ? cy.pan() : { x: 0, y: 0 };
+    const zoom = cy ? cy.zoom() : 1;
+    const width = containerRect?.width || 800;
+    const height = containerRect?.height || 600;
+    const canvasX = Math.round((width / 2 - pan.x) / zoom);
+    const canvasY = Math.round((height / 2 - pan.y) / zoom);
+    setDroppedEntityPrompt({
+      isOpen: true,
+      type,
+      position: { x: canvasX, y: canvasY },
+      screenX: width / 2,
+      screenY: height / 2,
+    });
+    setDroppedEntityName('');
   };
 
   // Focus and Highlight Node + Direct Neighbors
@@ -1547,276 +2014,377 @@ export const GraphView: React.FC<GraphViewProps> = ({
   };
 
   return (
-    <div ref={rootRef} className="relative w-full h-full flex flex-col bg-[#111115] select-none overflow-hidden">
-      {/* Top Controls Toolbar */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none gap-2">
-        {/* Left Search Bar & Layout Switcher */}
-        <div className="flex items-center space-x-2 pointer-events-auto bg-[#18181c]/90 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-obsidian-border shadow-popover shrink-0">
-          <div className="relative flex items-center">
-            <Search className="w-3.5 h-3.5 text-obsidian-dim absolute left-2" />
-            <input
-              type="text"
-              placeholder={isNarrow ? "Find..." : isCompact ? "Find in graph..." : "Find entity or alias in graph..."}
-              value={searchQuery}
-              onChange={(e) => handleGraphSearch(e.target.value)}
-              className={`pl-7 pr-2 py-1 bg-[#121214] border border-obsidian-border rounded-lg text-xs text-obsidian-text placeholder-obsidian-dim focus:outline-none focus:border-obsidian-accent transition-all ${
-                isNarrow ? 'w-24' : isCompact ? 'w-32' : 'w-48'
+    <div ref={rootRef} className="relative w-full h-full flex flex-col select-none overflow-hidden" style={{ background: GRAPH_BG }}>
+      {/* Graph toolbar (docked) */}
+      <div className="h-[32px] shrink-0 flex items-center gap-0.5 px-1.5 border-b border-[var(--t-border)] bg-[var(--t-panel)] z-20 relative min-w-0">
+        <div className="relative flex items-center">
+          <Search className="w-3 h-3 text-zinc-600 absolute left-2 pointer-events-none" />
+          <input
+            ref={graphSearchRef}
+            type="text"
+            placeholder="Find in graph"
+            value={searchQuery}
+            onChange={(e) => handleGraphSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                handleGraphSearch('');
+                clearFocus();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className={`t-input !pl-6 !pr-6 ${isNarrow ? '!w-32' : isCompact ? '!w-44' : isMedium ? '!w-56' : '!w-72'}`}
+          />
+          <span className="t-kbd absolute right-1.5 pointer-events-none">/</span>
+        </div>
+
+        <ToolSep />
+
+        {isCompact ? (
+          <select
+            value={layoutName}
+            onChange={(e) => {
+              setLayoutName(e.target.value);
+              runLayout(e.target.value);
+            }}
+            className="t-input !w-auto !pr-1 cursor-default"
+            title="Layout"
+          >
+            <option value="force">Force</option>
+            <option value="breadthfirst">Tree</option>
+            <option value="concentric">Radial</option>
+            <option value="grid">Grid</option>
+          </select>
+        ) : (
+        <div className="flex items-stretch h-[24px] border border-[var(--t-border)] rounded-[3px] overflow-hidden" role="radiogroup" aria-label="Layout">
+          {[
+            { id: 'force', label: 'Force', title: 'Force-directed (ForceAtlas2)' },
+            { id: 'breadthfirst', label: 'Tree', title: 'Hierarchical' },
+            { id: 'concentric', label: 'Radial', title: 'Concentric by degree' },
+            { id: 'grid', label: 'Grid', title: 'Grid' },
+          ].map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="radio"
+              aria-checked={layoutName === l.id}
+              onClick={() => {
+                setLayoutName(l.id);
+                runLayout(l.id);
+              }}
+              className={`px-2 text-[11.5px] border-l border-[var(--t-border)] first:border-l-0 ${
+                layoutName === l.id ? 'bg-[var(--t-active)] text-zinc-100' : 'text-zinc-500 hover:text-zinc-200 hover:bg-[var(--t-hover)]'
               }`}
-            />
-          </div>
+              title={l.title}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+        )}
+        <button type="button" onClick={() => runLayout(layoutName)} className="t-icon-btn" title="Re-run layout  (L)">
+          <RotateCcw />
+        </button>
+        <button type="button" onClick={() => cyRef.current?.fit(undefined, 30)} className="t-icon-btn" title="Fit to view  (F)">
+          <Maximize2 />
+        </button>
 
-          <div className="w-px h-4 bg-obsidian-border" />
+        <ToolSep />
 
-          {/* Layout Selector: Dropdown when compact, 3 buttons when wide */}
-          {isCompact ? (
-            <div className="relative flex items-center">
-              <select
-                value={layoutName}
-                onChange={(e) => {
-                  const l = e.target.value;
-                  setLayoutName(l);
-                  runLayout(l);
+        <button type="button" onClick={() => setShowEdgeLabels(!showEdgeLabels)} className="t-icon-btn" data-active={showEdgeLabels} title="Relationship labels when zoomed in">
+          <Tag />
+        </button>
+        <button type="button" onClick={() => setShowNotesOnGraph(!showNotesOnGraph)} className="t-icon-btn" data-active={showNotesOnGraph} title="Show notes and their [[mentions]]">
+          <FileText />
+        </button>
+        {!isNarrow && (
+        <button type="button" onClick={() => setSizeByDegree(!sizeByDegree)} className="t-icon-btn" data-active={sizeByDegree} title="Size nodes by number of connections">
+          <Activity />
+        </button>
+        )}
+        {!isNarrow && (
+        <button type="button" onClick={() => setClusterLeaves(!clusterLeaves)} className="t-icon-btn" data-active={clusterLeaves} title="Collapse leaf entities into collections">
+          <Boxes />
+        </button>
+        )}
+        <button
+          type="button"
+          onClick={toggleConnectMode}
+          className="t-icon-btn"
+          data-active={isConnectModeActive || isConnectKeyPressed}
+          title="Connect mode: drag from one node to another  (hold C or ⌥)"
+        >
+          <GitFork />
+        </button>
+
+        <ToolSep />
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setSelectionMenuOpen(!selectionMenuOpen)}
+            className="t-btn !bg-transparent !border-transparent hover:!bg-[var(--t-hover)] !px-1.5"
+            data-active={selectionMenuOpen}
+            title="Selection tools"
+          >
+            <MousePointer className="w-3.5 h-3.5" />
+            {!isMedium && <span>Select</span>}
+            <ChevronDown className="w-3 h-3 text-zinc-500" />
+          </button>
+          {selectionMenuOpen && (
+            <div className="t-menu absolute top-full mt-1 left-0 z-40 w-52">
+              <button
+                type="button"
+                className="t-menu-item"
+                onClick={() => {
+                  const sel = cyRef.current?.$(':selected');
+                  if (sel && sel.nonempty()) {
+                    sel.neighborhood().select();
+                    showToast('Selected neighbours');
+                  } else {
+                    showToast('Select a node first');
+                  }
+                  setSelectionMenuOpen(false);
                 }}
-                className="bg-[#121214] text-[11px] text-obsidian-text border border-obsidian-border rounded-lg pl-2 pr-5 py-1 capitalize focus:outline-none focus:border-obsidian-accent cursor-pointer appearance-none font-medium transition-colors"
-                title="Switch Graph Layout"
               >
-                <option value="cose">Cose</option>
-                <option value="concentric">Concentric</option>
-                <option value="breadthfirst">Breadthfirst</option>
-              </select>
-              <ChevronDown className="w-3 h-3 text-obsidian-dim absolute right-1.5 pointer-events-none" />
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1 text-xs">
-              {(['cose', 'concentric', 'breadthfirst'] as const).map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  onClick={() => {
-                    setLayoutName(l);
-                    runLayout(l);
-                  }}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-medium capitalize transition-colors ${
-                    layoutName === l
-                      ? 'bg-obsidian-accent text-white shadow-sm'
-                      : 'text-obsidian-muted hover:text-white hover:bg-obsidian-hover'
-                  }`}
-                >
-                  {l}
-                </button>
-              ))}
+                <Share2 />
+                <span className="flex-1">Select neighbours</span>
+              </button>
+              <button type="button" className="t-menu-item" onClick={() => { invertSelection(); setSelectionMenuOpen(false); }}>
+                <RotateCcw />
+                <span className="flex-1">Invert selection</span>
+              </button>
+              <button type="button" className="t-menu-item" onClick={() => { findShortestPathBetweenSelected(); setSelectionMenuOpen(false); }}>
+                <CircleDot />
+                <span className="flex-1">Shortest path between 2</span>
+              </button>
+              <div className="t-menu-sep" />
+              <button
+                type="button"
+                className="t-menu-item"
+                onClick={() => {
+                  cyRef.current?.elements().unselect();
+                  setSelectionMenuOpen(false);
+                }}
+              >
+                <X />
+                <span className="flex-1">Deselect all</span>
+                <span className="t-kbd !border-0 opacity-70">Esc</span>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Right Toolbar Actions */}
-        <div className="flex items-center space-x-1.5 pointer-events-auto bg-[#18181c]/90 backdrop-blur-md px-2 py-1.5 rounded-xl border border-obsidian-border shadow-popover shrink-0">
-          {/* Toggle Notes */}
-          <button
-            type="button"
-            onClick={() => setShowNotesOnGraph(!showNotesOnGraph)}
-            className={`text-xs rounded-lg flex items-center space-x-1 transition-colors ${
-              isCompact ? 'p-1.5' : 'px-2 py-1'
-            } ${
-              showNotesOnGraph
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium'
-                : 'text-obsidian-muted hover:text-white hover:bg-obsidian-hover'
-            }`}
-            title="Toggle investigation notes on graph"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            {!isCompact && <span>Notes</span>}
-          </button>
-
-          {/* Toggle Edge Labels */}
-          <button
-            type="button"
-            onClick={() => setShowEdgeLabels(!showEdgeLabels)}
-            className={`text-xs rounded-lg flex items-center space-x-1 transition-colors ${
-              isCompact ? 'p-1.5' : 'px-2 py-1'
-            } ${
-              showEdgeLabels
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium'
-                : 'text-obsidian-muted hover:text-white hover:bg-obsidian-hover'
-            }`}
-            title="Toggle relationship labels on graph edges"
-          >
-            <Tag className="w-3.5 h-3.5" />
-            {!isCompact && <span>Labels</span>}
-          </button>
-
-          {/* Connect Mode Toggle */}
-          <button
-            type="button"
-            onClick={toggleConnectMode}
-            className={`text-xs rounded-lg flex items-center space-x-1 transition-colors ${
-              isCompact ? 'p-1.5' : 'px-2 py-1'
-            } ${
-              isConnectModeActive || isConnectKeyPressed
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/50 font-medium'
-                : 'text-obsidian-muted hover:text-white hover:bg-obsidian-hover'
-            }`}
-            title="Connect Mode: Drag between nodes to connect (or hold C / Option / Alt)"
-          >
-            <Share2 className="w-3.5 h-3.5 text-purple-400" />
-            {!isCompact && <span>Connect (C)</span>}
-          </button>
-
-          {/* Relationship Discovery Button */}
-          <button
-            type="button"
-            onClick={() => setDiscoveryModalOpen(true)}
-            className={`text-xs rounded-lg flex items-center space-x-1 transition-colors ${
-              isCompact ? 'p-1.5' : 'px-2 py-1'
-            } bg-purple-600/20 text-purple-300 hover:text-white hover:bg-purple-600/30 border border-purple-500/40 font-medium`}
-            title="Relationship Discovery: Scan entities for shared surnames, phones, corporate domains & attributes"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            {!isCompact && <span>Find Links</span>}
-          </button>
-
-          {/* Filter Dropdown Toggle */}
+        <div className="relative">
           <button
             type="button"
             onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-            className={`p-1.5 rounded-lg transition-colors ${
-              filterPanelOpen
-                ? 'bg-obsidian-accent text-white'
-                : 'text-obsidian-dim hover:text-white hover:bg-obsidian-hover'
-            }`}
-            title="Filter Entities and Relationships"
+            className="t-btn !bg-transparent !border-transparent hover:!bg-[var(--t-hover)] !px-1.5"
+            title="Filter entity types and relationship statuses"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
+            {!isMedium && <span>Filter</span>}
+            {hiddenFilterCount > 0 && (
+              <span className="font-mono text-[10px] text-[var(--t-accent-strong)] tabular-nums">{hiddenFilterCount}</span>
+            )}
+            <ChevronDown className="w-3 h-3 text-zinc-500" />
           </button>
-
-          {/* Fit to Screen */}
-          <button
-            type="button"
-            onClick={() => cyRef.current?.fit(undefined, 40)}
-            className="p-1.5 text-obsidian-dim hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-            title="Fit to Screen"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Reset Layout */}
-          <button
-            type="button"
-            onClick={() => runLayout(layoutName)}
-            className="p-1.5 text-obsidian-dim hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-            title="Re-run Layout"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Save Positions */}
-          {onSavePositions && (
-            <button
-              type="button"
-              onClick={() => {
-                handleSavePositions();
-                showToast('Graph positions saved');
-              }}
-              className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 rounded-lg transition-colors"
-              title="Save Graph Positions"
-            >
-              <BookmarkCheck className="w-3.5 h-3.5" />
-            </button>
+          {filterPanelOpen && (
+            <div className="t-menu absolute top-full mt-1 left-0 z-40 w-60 !py-0 text-[12px]">
+              <div className="h-[26px] flex items-center justify-between px-2.5 border-b border-[var(--t-border)]">
+                <span className="t-label">Entity types</span>
+                <button
+                  type="button"
+                  className="text-[11px] text-zinc-500 hover:text-zinc-200"
+                  onClick={() => setSelectedEntityTypes(new Set(ENTITY_TYPES.map((t) => t.type)))}
+                >
+                  All
+                </button>
+              </div>
+              <div className="py-1 max-h-64 overflow-y-auto">
+                {ENTITY_TYPES.map((t) => {
+                  const checked = selectedEntityTypes.has(t.type);
+                  const n = typeCounts.get(t.type) || 0;
+                  return (
+                    <label key={t.type} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-default">
+                      <input type="checkbox" checked={checked} onChange={() => toggleEntityType(t.type)} className="accent-[var(--t-accent)] w-3 h-3" />
+                      <span className="t-swatch" style={{ background: t.color, opacity: checked ? 1 : 0.35 }} />
+                      <span className={`flex-1 ${checked ? 'text-zinc-200' : 'text-zinc-600'}`}>{t.label}</span>
+                      <span className="font-mono text-[10px] text-zinc-600 tabular-nums">{n}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="h-[26px] flex items-center px-2.5 border-y border-[var(--t-border)]">
+                <span className="t-label">Verification</span>
+              </div>
+              <div className="py-1">
+                {RELATIONSHIP_STATUSES.map((s) => {
+                  const checked = selectedStatuses.has(s.status);
+                  return (
+                    <label key={s.status} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-default">
+                      <input type="checkbox" checked={checked} onChange={() => toggleStatus(s.status)} className="accent-[var(--t-accent)] w-3 h-3" />
+                      <StatusGlyph status={s.status} width={14} />
+                      <span className={`flex-1 ${checked ? 'text-zinc-200' : 'text-zinc-600'}`}>{s.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           )}
+        </div>
 
-          {/* Add Entity */}
+        <button
+          type="button"
+          onClick={() => setDiscoveryModalOpen(true)}
+          className="t-btn !bg-transparent !border-transparent hover:!bg-[var(--t-hover)] !px-1.5"
+          title="Discover candidate relationships from shared attributes (surnames, phones, domains…)"
+        >
+          <ScanSearch className="w-3.5 h-3.5" />
+          {!isMedium && <span>Discover</span>}
+        </button>
+
+        <div className="flex-1" />
+
+        {!isMedium && (
+          <span className="font-mono text-[10.5px] text-zinc-600 tabular-nums px-2 whitespace-nowrap" title="Visible nodes / edges">
+            {visibleCounts.nodes} n · {visibleCounts.edges} e
+          </span>
+        )}
+        {onSavePositions && (
           <button
             type="button"
-            onClick={onCreateEntity}
-            className={`text-xs bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded-lg flex items-center space-x-1 font-medium shadow-sm transition-colors ${
-              isNarrow ? 'p-1.5' : 'px-2.5 py-1'
-            }`}
-            title="Create New Entity"
+            onClick={() => {
+              handleSavePositions();
+              showToast('Node positions saved');
+            }}
+            className="t-icon-btn"
+            title="Save node positions"
           >
-            <Plus className="w-3.5 h-3.5" />
-            {!isNarrow && <span>Entity</span>}
+            <Save />
           </button>
-        </div>
+        )}
+        <button type="button" onClick={() => setIsPaletteOpen(!isPaletteOpen)} className="t-icon-btn" data-active={isPaletteOpen} title="Entity palette (drag types onto the canvas)">
+          <Layers />
+        </button>
+        <button type="button" onClick={onCreateEntity} className="t-btn t-btn-primary ml-1" title="New entity  (N)">
+          <Plus className="w-3 h-3" />
+          {!isCompact && <span>Entity</span>}
+        </button>
       </div>
 
-      {/* Filter Popover Panel */}
-      {filterPanelOpen && (
-        <div className="absolute top-14 right-3 z-30 w-72 bg-[#18181c] border border-obsidian-border rounded-xl shadow-popover p-3 text-xs space-y-3 animate-in fade-in zoom-in-95 duration-100">
-          <div className="flex items-center justify-between border-b border-obsidian-border pb-1.5">
-            <span className="font-semibold text-white">Graph Filters</span>
-            <button
-              type="button"
-              onClick={() => setFilterPanelOpen(false)}
-              className="text-obsidian-dim hover:text-white p-0.5 rounded transition-colors"
+      {/* Canvas area (palette docks inside it) */}
+      <div className="relative flex-1 min-h-0">
+      <div
+        ref={containerRef}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={handleCanvasDrop}
+        className={`w-full h-full ${(isConnectKeyPressed || isConnectModeActive) ? 'cursor-crosshair' : ''}`}
+      />
+
+      {/* Maltego Entity Palette */}
+      <EntityPalette
+        isOpen={isPaletteOpen}
+        onToggle={() => setIsPaletteOpen(!isPaletteOpen)}
+        onSelectTypeToAdd={handlePaletteSelectType}
+      />
+      </div>
+
+      {/* Maltego Transform Output Console */}
+      <TransformConsole
+        logs={transformLogs}
+        activeTransformName={activeRunningTransform?.name}
+        activeEntityName={activeRunningTransform?.entityName}
+        isRunning={isRunningTransform}
+        onClearLogs={() => setTransformLogs([])}
+      />
+
+      {/* Dropped Entity Name Modal / Prompt */}
+      {droppedEntityPrompt?.isOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/55 flex items-center justify-center p-4">
+          <div className="bg-[var(--t-raised)] border border-[var(--t-border)] rounded max-w-sm w-full p-4 shadow-popover text-xs space-y-3 animate-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div
+                  className="w-6 h-6 rounded flex items-center justify-center"
+                  style={{
+                    backgroundColor: `${getEntityTypeColor(droppedEntityPrompt.type)}25`,
+                    color: getEntityTypeColor(droppedEntityPrompt.type),
+                    border: `1px solid ${getEntityTypeColor(droppedEntityPrompt.type)}60`,
+                  }}
+                >
+                  <EntityIcon type={droppedEntityPrompt.type} className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-semibold text-white capitalize text-sm">
+                  Add {getEntityTypeLabel(droppedEntityPrompt.type)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDroppedEntityPrompt(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const name = droppedEntityName.trim() || `New ${droppedEntityPrompt.type}`;
+                if (onCreateEntityAtPosition) {
+                  await onCreateEntityAtPosition(droppedEntityPrompt.type, droppedEntityPrompt.position, name);
+                }
+                setDroppedEntityPrompt(null);
+                setDroppedEntityName('');
+              }}
+              className="space-y-3"
             >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              <div>
+                <label className="block text-[11px] text-zinc-500 mb-1">
+                  Entity Value / Name
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={droppedEntityName}
+                  onChange={(e) => setDroppedEntityName(e.target.value)}
+                  placeholder={
+                    droppedEntityPrompt.type === 'domain'
+                      ? 'e.g. example.com'
+                      : droppedEntityPrompt.type === 'ip'
+                      ? 'e.g. 1.1.1.1'
+                      : droppedEntityPrompt.type === 'email'
+                      ? 'e.g. user@target.org'
+                      : droppedEntityPrompt.type === 'account'
+                      ? 'e.g. username'
+                      : 'e.g. Name'
+                  }
+                  className="w-full bg-[var(--t-hover)] border border-[var(--t-border)] focus:border-[var(--t-accent)] rounded-lg px-2.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none"
+                />
+              </div>
 
-          <div>
-            <span className="font-medium text-obsidian-dim block mb-1.5 uppercase text-[10px] tracking-wider">
-              Entity Types
-            </span>
-            <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto">
-              {ENTITY_TYPES.map((t) => {
-                const checked = selectedEntityTypes.has(t.type);
-                return (
-                  <button
-                    key={t.type}
-                    type="button"
-                    onClick={() => toggleEntityType(t.type)}
-                    className={`px-2 py-1 rounded flex items-center justify-between text-[11px] transition-colors ${
-                      checked
-                        ? 'bg-[#22222a] text-white border border-obsidian-border'
-                        : 'text-obsidian-dim opacity-50 hover:opacity-80'
-                    }`}
-                  >
-                    <span className="flex items-center space-x-1.5 truncate">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-                      <span className="truncate">{t.label}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <span className="font-medium text-obsidian-dim block mb-1.5 uppercase text-[10px] tracking-wider">
-              Relationship Statuses
-            </span>
-            <div className="space-y-1">
-              {RELATIONSHIP_STATUSES.map((s) => {
-                const checked = selectedStatuses.has(s.status);
-                return (
-                  <button
-                    key={s.status}
-                    type="button"
-                    onClick={() => toggleStatus(s.status)}
-                    className={`w-full px-2 py-1 rounded flex items-center justify-between text-[11px] transition-colors ${
-                      checked
-                        ? 'bg-[#22222a] text-white border border-obsidian-border'
-                        : 'text-obsidian-dim opacity-50 hover:opacity-80'
-                    }`}
-                  >
-                    <span className="flex items-center space-x-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                      <span>{s.label}</span>
-                    </span>
-                    <span className="text-[10px] text-obsidian-dim font-mono">{s.borderStyle}</span>
-                  </button>
-                );
-              })}
-            </div>
+              <div className="flex items-center justify-end space-x-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDroppedEntityPrompt(null)}
+                  className="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-obsidian-accent hover:bg-obsidian-accentHover text-white font-medium rounded-lg shadow-sm transition-colors"
+                >
+                  Place Node
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-
-      {/* Main Cytoscape Canvas */}
-      <div
-        ref={containerRef}
-        className={`w-full flex-1 ${(isConnectKeyPressed || isConnectModeActive) ? 'cursor-crosshair' : ''}`}
-      />
 
       {/* SVG Overlay for Interactive Relationship Dragging */}
       {connectionDrag && (
@@ -1857,7 +2425,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       {/* Floating Drag Label near cursor */}
       {connectionDrag && (
         <div
-          className="fixed pointer-events-none z-50 transform -translate-x-1/2 -translate-y-12 bg-[#1b1b24]/95 border border-indigo-500/40 text-white px-3 py-1.5 rounded-full shadow-2xl text-xs flex items-center space-x-2 backdrop-blur-md animate-in fade-in duration-100"
+          className="fixed pointer-events-none z-50 transform -translate-x-1/2 -translate-y-12 bg-[var(--t-hover)]/95 border border-indigo-500/40 text-white px-3 py-1.5 rounded-full shadow-popover text-xs flex items-center space-x-2"
           style={{ left: connectionDrag.currentX, top: connectionDrag.currentY }}
         >
           <Share2 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
@@ -1873,199 +2441,81 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       )}
 
-      {/* Bottom Info Bar */}
-      <div className="absolute bottom-2 left-3 right-3 z-10 flex items-center justify-between pointer-events-none text-[11px] text-obsidian-dim">
-        <div className="flex items-center space-x-3 pointer-events-auto bg-[#18181c]/80 backdrop-blur px-2.5 py-1 rounded-lg border border-obsidian-borderSubtle">
-          <span>{projectData.entities.length} entities</span>
-          <span>•</span>
-          <span>{projectData.relationships.length} relationships</span>
-          {projectData.notes && (
-            <>
-              <span>•</span>
-              <span>{projectData.notes.length} notes</span>
-            </>
-          )}
-          <span>•</span>
-          <span>Double-click: open</span>
-        </div>
-      </div>
-
-      {/* Floating Hover Inspection Card ("Більше інфи") */}
+      {/* Hover tooltip: compact facts about the entity under the cursor */}
       {hoveredNode && !contextMenu.visible && (() => {
-        const width = 280;
-        const padding = 16;
-        let left = hoveredNode.x + 18;
-        let top = hoveredNode.y - 30;
-
+        const width = 260;
+        const padding = 12;
+        let left = hoveredNode.x + 16;
+        let top = hoveredNode.y + 12;
         if (typeof window !== 'undefined') {
-          if (left + width > window.innerWidth - padding) {
-            left = hoveredNode.x - width - 18;
-          }
+          if (left + width > window.innerWidth - padding) left = hoveredNode.x - width - 16;
           if (left < padding) left = padding;
-          if (top < padding) top = padding;
-          if (top + 240 > window.innerHeight - padding) {
-            top = window.innerHeight - 240 - padding;
-          }
+          if (top + 200 > window.innerHeight - padding) top = Math.max(padding, hoveredNode.y - 200);
         }
 
-        // Card for Note Node
         if (hoveredNode.isNote && hoveredNote) {
           return (
-            <div
-              className="fixed z-40 w-70 bg-[#161410]/95 backdrop-blur-xl border border-amber-500/40 shadow-2xl rounded-xl p-3 text-xs text-obsidian-text pointer-events-none ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100"
-              style={{ left: `${left}px`, top: `${top}px` }}
-            >
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-900/40">
-                <div className="flex items-center space-x-1.5 text-amber-300 font-semibold uppercase text-[10px]">
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Investigation Note</span>
-                </div>
-                <span className="text-[9px] font-mono text-zinc-500">{hoveredNote.id}</span>
-              </div>
-              <div className="font-bold text-white text-[13px] leading-snug mb-1">
-                {hoveredNote.title}
-              </div>
-              <div className="text-[10px] text-zinc-300 line-clamp-3 italic">
-                {hoveredNote.markdownBody.slice(0, 140)}...
-              </div>
-              <div className="mt-2 pt-1.5 border-t border-amber-900/30 flex items-center justify-between text-[9px] text-zinc-500">
-                <span>Double-click: Open Note</span>
-                <span>Right-click: Menu</span>
-              </div>
+            <div className="t-menu fixed z-40 pointer-events-none !py-2 !px-2.5 space-y-1" style={{ left, top, width }}>
+              <div className="t-label">Note</div>
+              <div className="text-[12.5px] font-semibold text-zinc-50 leading-snug">{hoveredNote.title}</div>
+              <div className="text-[11.5px] text-zinc-400 line-clamp-3">{hoveredNote.markdownBody.slice(0, 180)}</div>
             </div>
           );
         }
 
-        // Card for Entity Node
         if (hoveredEntity) {
           const typeColor = getEntityTypeColor(hoveredEntity.type);
-          const photo =
-            hoveredEntity.attributes?.photo ||
-            hoveredEntity.attributes?.image ||
-            hoveredEntity.attributes?.avatar;
-
           return (
-            <div
-              className="fixed z-40 w-70 bg-[#141419]/95 backdrop-blur-xl border border-[#2e2e3c] shadow-2xl rounded-xl p-3 text-xs text-obsidian-text pointer-events-none ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100"
-              style={{ left: `${left}px`, top: `${top}px` }}
-            >
-              {/* Header / Type Badge */}
-              <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-[#252532]">
-                <div className="flex items-center space-x-1.5 truncate">
-                  <div
-                    className="w-5 h-5 rounded flex items-center justify-center shrink-0"
-                    style={{
-                      backgroundColor: `${typeColor}22`,
-                      border: `1px solid ${typeColor}55`,
-                      color: typeColor,
-                    }}
-                  >
-                    <EntityIcon type={hoveredEntity.type} className="w-3 h-3" />
-                  </div>
-                  <span
-                    className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{
-                      backgroundColor: `${typeColor}1a`,
-                      color: typeColor,
-                    }}
-                  >
-                    {getEntityTypeLabel(hoveredEntity.type)}
+            <div className="t-menu fixed z-40 pointer-events-none !py-2 text-[12px]" style={{ left, top, width }}>
+              <div className="px-2.5 space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="t-swatch" style={{ background: typeColor }} />
+                  <span className="t-label" style={{ color: typeColor }}>{getEntityTypeLabel(hoveredEntity.type)}</span>
+                  <span className="ml-auto font-mono text-[10.5px] text-zinc-500 tabular-nums">
+                    {hoveredEntityRelations.length} links
                   </span>
                 </div>
-
-                <div className="text-[10px] text-zinc-400 font-mono bg-white/5 px-1.5 py-0.5 rounded shrink-0">
-                  {hoveredEntityRelations.length} links
-                </div>
-              </div>
-
-              {/* Entity Photo + Name */}
-              <div className="flex items-center gap-2 mb-1.5">
-                {photo && (
-                  <img
-                    src={photo}
-                    alt={hoveredEntity.name}
-                    className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
-                  />
+                <div className="text-[12.5px] font-semibold text-zinc-50 leading-snug break-words">{hoveredEntity.name}</div>
+                {hoveredEntity.aliases?.length > 0 && (
+                  <div className="text-[11px] text-zinc-500 truncate">aka {hoveredEntity.aliases.join(' · ')}</div>
                 )}
-                <div className="font-bold text-white text-[13px] leading-snug truncate">
-                  {hoveredEntity.name}
-                </div>
               </div>
-
-              {/* Aliases */}
-              {hoveredEntity.aliases && hoveredEntity.aliases.length > 0 && (
-                <div className="text-[10px] text-zinc-400 mb-1.5 truncate">
-                  <span className="text-zinc-500 font-medium">aka: </span>
-                  <span>{hoveredEntity.aliases.join(', ')}</span>
-                </div>
-              )}
-
-              {/* Tags */}
-              {hoveredEntity.tags && hoveredEntity.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {hoveredEntity.tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-950/60 text-purple-300 border border-purple-800/40"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Relationships preview */}
               {hoveredEntityRelations.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-[#252532] space-y-1">
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                    Connected entities ({hoveredEntityRelations.length})
-                  </div>
-                  {hoveredEntityRelations.slice(0, 3).map((rel) => {
+                <div className="mt-1.5 pt-1.5 border-t border-[var(--t-border)] px-2.5 space-y-[3px]">
+                  {hoveredEntityRelations.slice(0, 4).map((rel) => {
                     const s = rel.source_entity || (rel as any).source;
                     const t = rel.target_entity || (rel as any).target;
                     const isSource = s === hoveredEntity.id;
                     const otherId = isSource ? t : s;
-                    const otherEntity = projectData.entities.find((e) => e.id === otherId);
-                    const otherName = otherEntity ? otherEntity.name : otherId;
+                    const other = projectData.entities.find((e) => e.id === otherId);
                     return (
-                      <div key={rel.id} className="flex items-center space-x-1.5 text-[10px] truncate">
-                        <span className="text-zinc-500 font-mono text-[9px]">
-                          {isSource ? '→' : '←'}
-                        </span>
-                        <span className="text-purple-300 font-mono text-[9px] bg-purple-950/70 px-1 rounded border border-purple-800/40 shrink-0">
-                          {rel.type}
-                        </span>
-                        <span className="text-zinc-300 truncate">{otherName}</span>
+                      <div key={rel.id} className="flex items-center gap-1.5 text-[11px] min-w-0">
+                        <span className="font-mono text-zinc-600 w-2.5 shrink-0">{isSource ? '→' : '←'}</span>
+                        <span className="font-mono text-zinc-500 shrink-0 max-w-[90px] truncate">{rel.type}</span>
+                        <span className="text-zinc-300 truncate">{other ? other.name : otherId}</span>
                       </div>
                     );
                   })}
+                  {hoveredEntityRelations.length > 4 && (
+                    <div className="text-[10.5px] text-zinc-600 pl-4">+{hoveredEntityRelations.length - 4} more</div>
+                  )}
                 </div>
               )}
-
-              {/* Note Snippet */}
               {hoveredEntityNotesPreview && (
-                <div className="mt-2 pt-2 border-t border-[#252532] text-[10px] text-zinc-400 italic line-clamp-2">
-                  "{hoveredEntityNotesPreview}"
+                <div className="mt-1.5 pt-1.5 border-t border-[var(--t-border)] px-2.5 text-[11px] text-zinc-400 line-clamp-2">
+                  {hoveredEntityNotesPreview}
                 </div>
               )}
-
-              {/* Keyboard & Action Hint */}
-              <div className="mt-2.5 pt-1.5 border-t border-[#252532] flex items-center justify-between text-[9px] text-zinc-400">
-                <span>Double-click: Open</span>
-                <span>Right-Click: Menu</span>
-              </div>
             </div>
           );
         }
-
         return null;
       })()}
 
-      {/* Toast Notification */}
+      {/* Transient feedback, bottom-left of the canvas */}
       {toastMessage && (
-        <div className="fixed bottom-12 right-6 z-50 bg-[#1e1e24] border border-obsidian-border text-white px-3 py-1.5 rounded-lg shadow-2xl text-xs flex items-center space-x-2 animate-in fade-in duration-150">
-          <BookmarkCheck className="w-3.5 h-3.5 text-obsidian-accent" />
-          <span>{toastMessage}</span>
+        <div className="absolute bottom-[30px] left-2 z-30 px-2 h-[22px] flex items-center bg-[var(--t-raised)] border border-[var(--t-border)] rounded-[3px] text-[11.5px] text-zinc-300 pointer-events-none">
+          {toastMessage}
         </div>
       )}
 
@@ -2102,13 +2552,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
         return (
           <div
             data-context-menu
-            className="fixed z-50 w-60 bg-[#141419]/95 backdrop-blur-2xl border border-[#2e2e3d] rounded-xl shadow-[0_16px_40px_rgba(0,0,0,0.7)] text-xs text-obsidian-text ring-1 ring-white/10 p-1 select-none animate-in fade-in zoom-in-95 duration-100"
+            className="t-menu fixed z-[80] w-60 select-none"
             style={{ top: `${top}px`, left: `${left}px` }}
           >
             {/* Background Canvas Menu */}
             {contextMenu.targetType === 'background' && (
               <>
-                <div className="px-3 py-2 border-b border-[#252532] bg-[#1a1a24]/70 rounded-t-lg mb-1">
+                <div className="px-2.5 pt-1 pb-1.5 border-b border-[var(--t-border)] mb-[3px]">
                   <div className="flex items-center space-x-1.5 text-white font-semibold text-xs">
                     <Layers className="w-3.5 h-3.5 text-obsidian-accent" />
                     <span>Investigation Canvas</span>
@@ -2125,7 +2575,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       onCreateEntity();
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-obsidian-accent hover:text-white hover:bg-obsidian-accent/30 rounded-lg text-left transition-colors font-medium"
+                    className="t-menu-item"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add New Entity</span>
@@ -2137,7 +2587,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       cyRef.current?.fit(undefined, 40);
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                    className="t-menu-item"
                   >
                     <Maximize2 className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Fit Graph to Screen</span>
@@ -2149,7 +2599,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       runLayout(layoutName);
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center justify-between text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                    className="t-menu-item"
                   >
                     <div className="flex items-center space-x-2">
                       <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
@@ -2166,16 +2616,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                         showToast('Graph layout positions saved');
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
-                      <Save className="w-3.5 h-3.5 text-emerald-400" />
+                      <Save className="w-3.5 h-3.5 opacity-70" />
                       <span>Save Node Positions</span>
                     </button>
                   )}
 
                   {hiddenNodeIds.size > 0 && (
                     <>
-                      <div className="border-t border-[#252532] my-1" />
+                      <div className="t-menu-sep" />
                       <button
                         type="button"
                         onClick={() => {
@@ -2183,7 +2633,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                           setContextMenu((prev) => ({ ...prev, visible: false }));
                           showToast(`Restored ${hiddenNodeIds.size} hidden nodes`);
                         }}
-                        className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-amber-400 hover:bg-amber-500/20 rounded-lg text-left transition-colors"
+                        className="t-menu-item"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Unhide All ({hiddenNodeIds.size})</span>
@@ -2198,7 +2648,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         clearFocus();
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Clear Isolation</span>
@@ -2211,7 +2661,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             {/* Note Node Menu */}
             {contextMenu.targetType === 'node' && contextMenu.isNote && selectedNodeNote && (
               <>
-                <div className="px-3 py-2 border-b border-[#252532] bg-[#1a1a24]/70 rounded-t-lg mb-1">
+                <div className="px-2.5 pt-1 pb-1.5 border-b border-[var(--t-border)] mb-[3px]">
                   <div className="flex items-center space-x-2">
                     <div className="w-6 h-6 rounded bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
                       <FileText className="w-3.5 h-3.5" />
@@ -2232,7 +2682,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       onOpenNote?.(selectedNodeNote.id);
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center justify-between text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors font-medium"
+                    className="t-menu-item"
                   >
                     <div className="flex items-center space-x-2">
                       <ExternalLink className="w-3.5 h-3.5 text-obsidian-accent" />
@@ -2244,13 +2694,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   <button
                     type="button"
                     onClick={() => copyToClipboard(selectedNodeNote.title, 'title')}
-                    className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                    className="t-menu-item"
                   >
                     <Copy className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Copy Note Title</span>
                   </button>
 
-                  <div className="border-t border-[#252532] my-1" />
+                  <div className="t-menu-sep" />
 
                   {onDeleteNote && (
                     <button
@@ -2259,7 +2709,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         onDeleteNote(selectedNodeNote.id);
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 hover:bg-rose-950/60 text-rose-400 hover:text-rose-200 rounded-lg text-left transition-colors"
+                      className="t-menu-item !text-rose-400 hover:!bg-rose-500/70 hover:!text-white"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete Note</span>
@@ -2274,7 +2724,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               const typeColor = getEntityTypeColor(selectedNodeEntity.type);
               return (
                 <>
-                  <div className="px-3 py-2 border-b border-[#252532] bg-[#1a1a24]/70 rounded-t-lg mb-1">
+                  <div className="px-2.5 pt-1 pb-1.5 border-b border-[var(--t-border)] mb-[3px]">
                     <div className="flex items-center space-x-2">
                       <div
                         className="w-6 h-6 rounded flex items-center justify-center shrink-0"
@@ -2305,13 +2755,63 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   </div>
 
                   <div className="space-y-0.5">
+                    {/* Maltego Transforms Runner Section */}
+                    {(() => {
+                      const nodeTransforms = getTransformsForEntity(selectedNodeEntity.type);
+                      if (nodeTransforms.length === 0) return null;
+
+                      return (
+                        <div className="mb-1.5 pb-1.5 border-b border-[var(--t-border)]">
+                          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center justify-between">
+                            <span className="flex items-center space-x-1">
+                              <Zap className="w-3 h-3 fill-amber-400/20" />
+                              <span>Maltego Transforms</span>
+                            </span>
+                            <span className="text-[9px] text-zinc-500 font-mono font-normal">
+                              {nodeTransforms.length} available
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 max-h-48 overflow-y-auto custom-scrollbar">
+                            {nodeTransforms.map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => {
+                                  handleExecuteTransform(selectedNodeEntity, t);
+                                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                                }}
+                                className="w-full px-2 py-1 flex items-center justify-between text-left hover:bg-amber-500/15 text-zinc-200 hover:text-white rounded-md transition-colors group"
+                              >
+                                <div className="flex items-center space-x-1.5 min-w-0">
+                                  {t.isMachine ? (
+                                    <ScanSearch className="w-3 h-3 text-purple-400 shrink-0" />
+                                  ) : (
+                                    <Zap className="w-3 h-3 text-amber-400 shrink-0" />
+                                  )}
+                                  <span className="text-[11px] truncate group-hover:text-amber-300 font-medium">
+                                    {t.name}
+                                  </span>
+                                </div>
+                                {t.isMachine && (
+                                  <span className="text-[8px] font-bold uppercase tracking-wider text-purple-400 bg-purple-500/20 px-1 py-0.2 rounded shrink-0">
+                                    Machine
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <button
                       type="button"
                       onClick={() => {
                         onOpenEntity(selectedNodeEntity.id);
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center justify-between text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors font-medium"
+                      className="t-menu-item"
                     >
                       <div className="flex items-center space-x-2">
                         <ExternalLink className="w-3.5 h-3.5 text-obsidian-accent" />
@@ -2326,9 +2826,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         onCreateRelationshipFromEntity(selectedNodeEntity.id);
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
-                      <Share2 className="w-3.5 h-3.5 text-sky-400" />
+                      <Share2 className="w-3.5 h-3.5 opacity-70" />
                       <span>Connect with Relationship</span>
                     </button>
 
@@ -2338,18 +2838,47 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         focusNodeNeighborhood(selectedNodeEntity.id);
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
-                      <Crosshair className="w-3.5 h-3.5 text-amber-400" />
+                      <Crosshair className="w-3.5 h-3.5 opacity-70" />
                       <span>Focus & Isolate Neighbors</span>
                     </button>
 
-                    <div className="border-t border-[#252532] my-1" />
+                    {/* Maltego Graph Selection Tools */}
+                    <div className="space-y-0.5 py-1 border-t border-[var(--t-border)] my-1">
+                      <div className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                        Investigation Selection
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          selectNeighbors(selectedNodeEntity.id, 'all');
+                          setContextMenu((prev) => ({ ...prev, visible: false }));
+                        }}
+                        className="t-menu-item"
+                      >
+                        <Share2 className="w-3.5 h-3.5 opacity-70" />
+                        <span>Select All Neighbors</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          selectByType(selectedNodeEntity.type);
+                          setContextMenu((prev) => ({ ...prev, visible: false }));
+                        }}
+                        className="t-menu-item"
+                      >
+                        <Boxes className="w-3.5 h-3.5 opacity-70" />
+                        <span>Select All {selectedNodeEntity.type} Nodes</span>
+                      </button>
+                    </div>
+
+                    <div className="t-menu-sep" />
 
                     <button
                       type="button"
                       onClick={() => copyToClipboard(selectedNodeEntity.name, 'name')}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
                       <Copy className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Copy Entity Name</span>
@@ -2358,7 +2887,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     <button
                       type="button"
                       onClick={() => copyToClipboard(selectedNodeEntity.id, 'ID')}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
                       <Hash className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Copy Entity ID</span>
@@ -2371,13 +2900,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                         showToast(`Hidden "${selectedNodeEntity.name}" from graph`);
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                      className="t-menu-item"
                     >
                       <EyeOff className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Hide from Canvas</span>
                     </button>
 
-                    <div className="border-t border-[#252532] my-1" />
+                    <div className="t-menu-sep" />
 
                     <button
                       type="button"
@@ -2385,7 +2914,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         onDeleteEntity(selectedNodeEntity.id);
                         setContextMenu((prev) => ({ ...prev, visible: false }));
                       }}
-                      className="w-full px-2.5 py-1.5 flex items-center space-x-2 hover:bg-rose-950/60 text-rose-400 hover:text-rose-200 rounded-lg text-left transition-colors"
+                      className="t-menu-item !text-rose-400 hover:!bg-rose-500/70 hover:!text-white"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete Entity</span>
@@ -2398,7 +2927,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             {/* Edge Menu */}
             {contextMenu.targetType === 'edge' && selectedEdge && (
               <>
-                <div className="px-3 py-2 border-b border-[#252532] bg-[#1a1a24]/70 rounded-t-lg mb-1">
+                <div className="px-2.5 pt-1 pb-1.5 border-b border-[var(--t-border)] mb-[3px]">
                   <div className="text-[10px] uppercase font-mono text-purple-400 font-semibold mb-0.5">
                     {selectedEdge.type}
                   </div>
@@ -2428,7 +2957,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       onOpenRelationship(selectedEdge.id);
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center justify-between text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors font-medium"
+                    className="t-menu-item"
                   >
                     <div className="flex items-center space-x-2">
                       <ExternalLink className="w-3.5 h-3.5 text-obsidian-accent" />
@@ -2448,7 +2977,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       }}
                       className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/60 rounded-lg text-left transition-colors font-medium"
                     >
-                      <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <CheckCheck className="w-3.5 h-3.5 opacity-70" />
                       <span>Confirm Relationship</span>
                     </button>
                   )}
@@ -2464,13 +2993,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         : selectedEdge.target_entity || (selectedEdge as any).target;
                       copyToClipboard(`${src} —[${selectedEdge.type}]→ ${tgt}`, 'relationship info');
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                    className="t-menu-item"
                   >
                     <Copy className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Copy Relationship Text</span>
                   </button>
 
-                  <div className="border-t border-[#252532] my-1" />
+                  <div className="t-menu-sep" />
 
                   <button
                     type="button"
@@ -2478,7 +3007,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                       onDeleteRelationship(selectedEdge.id);
                       setContextMenu((prev) => ({ ...prev, visible: false }));
                     }}
-                    className="w-full px-2.5 py-1.5 flex items-center space-x-2 hover:bg-rose-950/60 text-rose-400 hover:text-rose-200 rounded-lg text-left transition-colors"
+                    className="t-menu-item !text-rose-400 hover:!bg-rose-500/70 hover:!text-white"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete Relationship</span>

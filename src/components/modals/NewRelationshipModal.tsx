@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useEscapeKey } from '@/components/common/Dialog';
 import { ProjectData, Relationship, RelationshipStatus, RELATIONSHIP_STATUSES } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { X, Share2, Plus } from 'lucide-react';
@@ -69,6 +70,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
     }
   }, [isOpen, defaultSourceId, defaultTargetId, projectData]);
 
+  useEscapeKey(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -96,10 +98,10 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#18181c] border border-obsidian-border rounded-lg max-w-lg w-full shadow-popover overflow-hidden text-xs">
+    <div className="fixed inset-0 z-[70] bg-black/55 flex items-center justify-center p-4">
+      <div className="bg-[var(--t-panel)] border border-[#2e2f34] rounded-[4px] max-w-lg w-full shadow-popover overflow-hidden text-[12px]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-border bg-[#151518]">
+        <div className="h-[32px] flex items-center justify-between pl-3 pr-1.5 border-b border-[var(--t-border)]">
           <div className="flex items-center space-x-2 font-semibold text-obsidian-text">
             <Share2 className="w-4 h-4 text-purple-400" />
             <span>Create Relationship Claim</span>
@@ -107,7 +109,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-obsidian-dim hover:text-white p-1 rounded"
+            className="t-icon-btn"
           >
             <X className="w-4 h-4" />
           </button>
@@ -117,7 +119,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Source Entity *
               </label>
               <select
@@ -130,11 +132,11 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
                     if (other) setTargetId(other.id);
                   }
                 }}
-                className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-[var(--t-accent)] cursor-pointer"
                 required
               >
                 {projectData.entities.map((e) => (
-                  <option key={e.id} value={e.id} className="bg-[#18181c]">
+                  <option key={e.id} value={e.id} className="bg-[var(--t-raised)]">
                     {e.name} ({e.type})
                   </option>
                 ))}
@@ -142,17 +144,17 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Target Entity *
               </label>
               <select
                 value={targetId}
                 onChange={(e) => setTargetId(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-[var(--t-accent)] cursor-pointer"
                 required
               >
                 {projectData.entities.map((e) => (
-                  <option key={e.id} value={e.id} className="bg-[#18181c]">
+                  <option key={e.id} value={e.id} className="bg-[var(--t-raised)]">
                     {e.name} ({e.type})
                   </option>
                 ))}
@@ -161,7 +163,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
           </div>
 
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Predicate / Relationship Type *
             </label>
             <input
@@ -170,7 +172,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
               value={type}
               onChange={(e) => setType(e.target.value)}
               placeholder="e.g. operates, owns, registered..."
-              className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded font-mono text-purple-300 focus:outline-none focus:border-obsidian-accent"
+              className="w-full px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded font-mono text-purple-300 focus:outline-none focus:border-[var(--t-accent)]"
               required
             />
             <datalist id="modal-rel-types">
@@ -182,16 +184,16 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Verification Status *
               </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as RelationshipStatus)}
-                className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-[var(--t-accent)] cursor-pointer"
               >
                 {RELATIONSHIP_STATUSES.map((s) => (
-                  <option key={s.status} value={s.status} className="bg-[#18181c]">
+                  <option key={s.status} value={s.status} className="bg-[var(--t-raised)]">
                     {s.label} ({s.borderStyle})
                   </option>
                 ))}
@@ -199,7 +201,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Direction
               </label>
               <label className="flex items-center space-x-2 mt-2 cursor-pointer text-obsidian-text">
@@ -207,7 +209,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
                   type="checkbox"
                   checked={directed}
                   onChange={(e) => setDirected(e.target.checked)}
-                  className="rounded bg-[#141416] border-obsidian-border text-obsidian-accent focus:ring-0"
+                  className="rounded bg-[var(--t-panel)] border-obsidian-border text-obsidian-accent focus:ring-0"
                 />
                 <span>Directed (Source → Target)</span>
               </label>
@@ -218,14 +220,14 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text rounded"
+              className="t-btn"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!sourceId || !targetId || !type.trim()}
-              className="px-4 py-1.5 bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded font-medium disabled:opacity-50"
+              className="t-btn t-btn-primary"
             >
               Create Relationship
             </button>

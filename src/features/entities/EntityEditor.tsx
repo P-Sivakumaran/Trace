@@ -255,13 +255,13 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
   const color = getEntityTypeColor(draft.type);
 
   return (
-    <div className="h-full flex flex-col bg-obsidian-panel overflow-y-auto">
+    <div className="h-full flex flex-col bg-[var(--t-bg)] overflow-y-auto">
       {/* Top Header Bar */}
-      <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-3.5 bg-obsidian-panel/95 backdrop-blur border-b border-obsidian-border">
+      <div className="sticky top-0 z-20 h-[40px] shrink-0 flex items-center justify-between pl-4 pr-2 bg-[var(--t-panel)] border-b border-[var(--t-border)]">
         <div className="flex items-center space-x-3 min-w-0">
           {/* Avatar / Photo or Type Icon */}
           <div
-            className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center border shadow-sm shrink-0 relative group"
+            className="w-7 h-7 rounded-[3px] overflow-hidden flex items-center justify-center border shrink-0 relative group"
             style={{ backgroundColor: `${color}18`, borderColor: `${color}40`, color }}
           >
             {entityPhoto ? (
@@ -273,14 +273,14 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs text-obsidian-dim truncate">{draft.id}</span>
+              <span className="font-mono text-[10.5px] text-zinc-600 truncate">{draft.id}</span>
               {isDirty && (
-                <span className="text-[10px] bg-amber-950/80 border border-amber-800 text-amber-300 px-1.5 py-0.2 rounded font-medium shrink-0">
+                <span className="text-[10.5px] text-amber-400 shrink-0">
                   Unsaved changes
                 </span>
               )}
             </div>
-            <h1 className="text-lg font-semibold text-obsidian-text leading-tight truncate">{draft.name}</h1>
+            <h1 className="text-[13.5px] font-semibold text-zinc-50 leading-tight truncate">{draft.name}</h1>
           </div>
         </div>
 
@@ -288,9 +288,9 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
           <button
             type="button"
             onClick={() => onShowInGraph(draft.id)}
-            className="px-2.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[#2c2c36] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
+            className="t-btn"
           >
-            <Layers className="w-3.5 h-3.5 text-sky-400" />
+            <Layers className="w-3.5 h-3.5 opacity-70" />
             <span>Show in Graph</span>
           </button>
 
@@ -298,10 +298,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
             type="button"
             onClick={handleSave}
             disabled={!isDirty || !draft.name.trim()}
-            className={`px-3 py-1.5 flex items-center space-x-1.5 text-xs rounded-lg font-medium transition-colors ${
+            className={`t-btn ${
               isDirty && draft.name.trim()
-                ? 'bg-obsidian-accent hover:bg-obsidian-accentHover text-white shadow-sm'
-                : 'bg-obsidian-card text-obsidian-dim cursor-not-allowed border border-obsidian-border'
+                ? 't-btn-primary'
+                : 'opacity-50 cursor-not-allowed'
             }`}
           >
             <Save className="w-3.5 h-3.5" />
@@ -311,7 +311,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
           <button
             type="button"
             onClick={() => onDelete(draft.id)}
-            className="p-1.5 text-obsidian-dim hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors"
+            className="t-icon-btn hover:!text-rose-400"
             title="Delete Entity"
           >
             <Trash2 className="w-4 h-4" />
@@ -320,13 +320,12 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
       </div>
 
       {/* Editor Body */}
-      <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
+      <div className="px-6 py-4 max-w-[980px] w-full space-y-5">
         {/* Core Properties Card */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-xl p-5 space-y-4 shadow-subtle">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-obsidian-border pb-3">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Core Properties & Photo</h2>
-              <p className="text-xs text-obsidian-dim">Essential identity and avatar metadata</p>
+              <h2 className="t-label !text-zinc-400">Core Properties & Photo</h2>
             </div>
 
             {/* Photo Actions */}
@@ -341,18 +340,18 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
               <button
                 type="button"
                 onClick={() => photoFileInputRef.current?.click()}
-                className="px-2.5 py-1 text-xs bg-[#1f1f26] hover:bg-[#282832] text-zinc-200 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
+                className="t-btn"
               >
-                <Upload className="w-3.5 h-3.5 text-purple-400" />
+                <Upload className="w-3.5 h-3.5 opacity-70" />
                 <span>Upload Photo</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPhotoUrlInputOpen(!photoUrlInputOpen)}
-                className="px-2.5 py-1 text-xs bg-[#1f1f26] hover:bg-[#282832] text-zinc-200 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
+                className="t-btn"
               >
-                <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                <ImageIcon className="w-3.5 h-3.5 opacity-70" />
                 <span>Photo URL</span>
               </button>
 
@@ -371,18 +370,18 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
           {/* Photo URL Input Bar */}
           {photoUrlInputOpen && (
-            <div className="flex items-center gap-2 p-2 bg-[#16161c] border border-obsidian-border rounded-lg animate-in fade-in duration-100">
+            <div className="flex items-center gap-2 p-2 bg-[var(--t-raised)] border border-obsidian-border rounded-lg">
               <input
                 type="text"
                 value={photoUrlValue}
                 onChange={(e) => setPhotoUrlValue(e.target.value)}
                 placeholder="Paste image URL (https://...)..."
-                className="flex-1 px-3 py-1 bg-[#101014] border border-obsidian-border rounded text-xs text-zinc-200 focus:outline-none focus:border-purple-500"
+                className="flex-1 px-3 py-1 bg-[var(--t-bg)] border border-obsidian-border rounded text-xs text-zinc-200 focus:outline-none focus:border-[var(--t-accent)]"
               />
               <button
                 type="button"
                 onClick={handleApplyPhotoUrl}
-                className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded font-medium transition-colors"
+                className="t-btn t-btn-primary"
               >
                 Apply
               </button>
@@ -399,7 +398,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Display Name */}
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1.5">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Display Name *
               </label>
               <input
@@ -407,10 +406,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={draft.name}
                 onChange={(e) => updateDraft({ name: e.target.value })}
                 placeholder="Enter entity name..."
-                className={`w-full px-3 py-1.5 bg-[#141416] border rounded-lg text-sm text-obsidian-text focus:outline-none ${
+                className={`w-full px-3 py-1.5 bg-[var(--t-panel)] border rounded-lg text-sm text-obsidian-text focus:outline-none ${
                   !draft.name.trim()
                     ? 'border-rose-500/80 focus:border-rose-500'
-                    : 'border-obsidian-border focus:border-obsidian-accent'
+                    : 'border-obsidian-border focus:border-[var(--t-accent)]'
                 }`}
               />
               {!draft.name.trim() && (
@@ -420,16 +419,16 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
             {/* Entity Type */}
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1.5">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Entity Type *
               </label>
               <select
                 value={draft.type}
                 onChange={(e) => updateDraft({ type: e.target.value as EntityType })}
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="t-input"
               >
                 {ENTITY_TYPES.map((t) => (
-                  <option key={t.type} value={t.type} className="bg-[#18181c]">
+                  <option key={t.type} value={t.type} className="bg-[var(--t-raised)]">
                     {t.label}
                   </option>
                 ))}
@@ -439,7 +438,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
           {draft.type === 'custom' && (
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1.5">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Custom Type Label
               </label>
               <input
@@ -447,7 +446,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={draft.custom_type || ''}
                 onChange={(e) => updateDraft({ custom_type: e.target.value })}
                 placeholder="e.g. Crypto Wallet, Vehicle, Weapon..."
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="t-input"
               />
             </div>
           )}
@@ -471,14 +470,14 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
           {/* Aliases */}
           <div>
-            <label className="block text-xs font-medium text-obsidian-muted mb-1.5">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Aliases & Known Handles
             </label>
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {draft.aliases.map((alias) => (
                 <span
                   key={alias}
-                  className="px-2 py-0.5 rounded-full text-xs bg-[#1f1f26] border border-obsidian-border text-obsidian-text flex items-center space-x-1"
+                  className="px-2 py-0.5 rounded-full text-xs bg-[var(--t-hover)] border border-obsidian-border text-obsidian-text flex items-center space-x-1"
                 >
                   <span>{alias}</span>
                   <button
@@ -501,12 +500,12 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={aliasInput}
                 onChange={(e) => setAliasInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAlias())}
-                className="flex-1 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
               />
               <button
                 type="button"
                 onClick={addAlias}
-                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
+                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
               >
                 Add
               </button>
@@ -515,7 +514,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
           {/* Tags */}
           <div>
-            <label className="block text-xs font-medium text-obsidian-muted mb-1.5">Tags</label>
+            <label className="block text-[11px] text-zinc-500 mb-1">Tags</label>
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {draft.tags.map((tag) => (
                 <span
@@ -543,12 +542,12 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                className="flex-1 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
+                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
               >
                 Add
               </button>
@@ -557,13 +556,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
         </div>
 
         {/* Structured Attributes Section with Autocomplete & Map Integration */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-xl p-5 space-y-4 shadow-subtle">
-          <div className="flex items-center justify-between border-b border-obsidian-border pb-3">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Structured Attributes</h2>
-              <p className="text-xs text-obsidian-dim">
-                Key-value metadata fields with autocomplete suggestions & map coordinates
-              </p>
+              <h2 className="t-label !text-zinc-400">Structured Attributes</h2>
             </div>
           </div>
 
@@ -575,14 +571,14 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
               return (
                 <div key={k} className="flex items-center gap-2">
-                  <span className="w-1/3 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg font-mono text-xs text-obsidian-muted truncate">
+                  <span className="w-1/3 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg font-mono text-xs text-obsidian-muted truncate">
                     {k}
                   </span>
                   <input
                     type="text"
                     value={String(v)}
                     onChange={(e) => updateAttributeVal(k, e.target.value)}
-                    className="flex-1 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                    className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
                   />
                   {hasMap && String(v).trim().length > 0 && (
                     <button
@@ -626,15 +622,15 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                     setNewAttrKey(e.target.value);
                     setAttrDropdownOpen(true);
                   }}
-                  className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                  className="t-input"
                 />
 
                 {/* Floating Autocomplete Dropdown */}
                 {attrDropdownOpen && filteredPresets.length > 0 && (
-                  <div className="absolute top-9 left-0 right-0 z-30 bg-[#191922] border border-[#2e2e3f] rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                  <div className="absolute top-9 left-0 right-0 z-30 bg-[var(--t-raised)] border border-[var(--t-border)] rounded shadow-popover p-1 max-h-56 overflow-y-auto">
                     <div className="px-2 py-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider flex items-center justify-between">
                       <span>Attribute Presets</span>
-                      <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+                      <SlidersHorizontal className="w-3 h-3 opacity-70" />
                     </div>
                     {filteredPresets.map((preset) => (
                       <button
@@ -662,13 +658,13 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={newAttrVal}
                 onChange={(e) => setNewAttrVal(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
-                className="flex-1 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
               />
 
               <button
                 type="button"
                 onClick={addAttribute}
-                className="px-3.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text border border-obsidian-border rounded-lg transition-colors font-medium shrink-0"
+                className="px-3.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors font-medium shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add</span>
@@ -681,10 +677,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Markdown Findings & Analysis</h2>
-              <p className="text-xs text-obsidian-dim">
-                Investigation notes, findings, and wikilink references for this entity
-              </p>
+              <h2 className="t-label !text-zinc-400">Markdown Findings & Analysis</h2>
             </div>
           </div>
           <MarkdownEditor
@@ -698,13 +691,10 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
         </div>
 
         {/* Connected Relationships Section */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-xl p-5 space-y-4 shadow-subtle">
-          <div className="flex items-center justify-between border-b border-obsidian-border pb-3">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Connected Relationships</h2>
-              <p className="text-xs text-obsidian-dim">
-                Explicit graph relationships involving {draft.name}
-              </p>
+              <h2 className="t-label !text-zinc-400">Connected Relationships</h2>
             </div>
             <button
               type="button"
@@ -720,7 +710,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
             {/* Outgoing */}
             <div className="space-y-2">
               <span className="text-[11px] font-semibold text-obsidian-muted uppercase flex items-center space-x-1.5">
-                <ArrowRight className="w-3 h-3 text-sky-400" />
+                <ArrowRight className="w-3 h-3 opacity-70" />
                 <span>Outgoing Claims ({outgoingRels.length})</span>
               </span>
               {outgoingRels.length > 0 ? (
@@ -729,7 +719,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                     <div
                       key={rel.id}
                       onClick={() => onOpenRelationship(rel.id)}
-                      className="p-2.5 bg-[#141416] hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors flex items-center justify-between"
+                      className="p-2.5 bg-[var(--t-panel)] hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors flex items-center justify-between"
                     >
                       <div className="truncate mr-2">
                         <span className="font-mono text-xs text-purple-300 font-medium">
@@ -761,7 +751,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                     <div
                       key={rel.id}
                       onClick={() => onOpenRelationship(rel.id)}
-                      className="p-2.5 bg-[#141416] hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors flex items-center justify-between"
+                      className="p-2.5 bg-[var(--t-panel)] hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors flex items-center justify-between"
                     >
                       <div className="truncate mr-2">
                         <span className="text-xs text-obsidian-text font-medium">

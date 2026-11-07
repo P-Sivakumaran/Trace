@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Entity,
   EntityType,
+  ENTITY_TYPES,
   ProjectData,
   ProjectSummary,
   QuickSource,
@@ -37,13 +38,16 @@ import {
   Link2,
   StickyNote,
   FileText,
-  Star,
+  Bookmark,
   Globe,
   Zap,
   X,
   Play,
   Code,
-  Sparkles,
+  ScanSearch,
+  Filter,
+  ArrowDownAZ,
+  ArrowDownWideNarrow,
 } from 'lucide-react';
 
 interface LeftSidebarProps {
@@ -89,6 +93,28 @@ interface LeftSidebarProps {
   onResize?: (width: number) => void;
   onResetWidth?: () => void;
 }
+
+type ExplorerView = 'entities' | 'links' | 'sources' | 'notes' | 'tools';
+
+const RailButton: React.FC<{ active?: boolean; title: string; onClick?: () => void; children: React.ReactNode }> = ({
+  active,
+  title,
+  onClick,
+  children,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title}
+    className={`relative w-[30px] h-[28px] flex items-center justify-center rounded-[3px] [&>svg]:w-[15px] [&>svg]:h-[15px] ${
+      active
+        ? 'text-zinc-100 before:absolute before:-left-[4px] before:top-1 before:bottom-1 before:w-[2px] before:bg-[var(--t-accent)]'
+        : 'text-zinc-500 hover:text-zinc-200 hover:bg-[var(--t-hover)]'
+    }`}
+  >
+    {children}
+  </button>
+);
 
 interface SidebarContextMenuState {
   visible: boolean;
@@ -150,6 +176,40 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const [sourcesOpen, setSourcesOpen] = useState<boolean>(true);
   const [notesOpen, setNotesOpen] = useState<boolean>(true);
   const [projectSelectorOpen, setProjectSelectorOpen] = useState<boolean>(false);
+
+  // Explorer state (persisted per machine)
+  const [view, setView] = useState<ExplorerView>(() => {
+    try {
+      return (localStorage.getItem('trace.explorer.view') as ExplorerView) || 'entities';
+    } catch {
+      return 'entities';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('trace.explorer.view', view);
+    } catch {}
+  }, [view]);
+  const [filter, setFilter] = useState<string>('');
+  const [entitySort, setEntitySort] = useState<'name' | 'degree'>('degree');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (t: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  const { degreeMap, entityById } = useMemo(() => {
+    const dm = new Map<string, number>();
+    (projectData?.relationships || []).forEach((r) => {
+      dm.set(r.source_entity, (dm.get(r.source_entity) || 0) + 1);
+      dm.set(r.target_entity, (dm.get(r.target_entity) || 0) + 1);
+    });
+    const byId = new Map<string, Entity>();
+    (projectData?.entities || []).forEach((e) => byId.set(e.id, e));
+    return { degreeMap: dm, entityById: byId };
+  }, [projectData?.relationships, projectData?.entities]);
 
   // New Quick Source Modal state
   const [newQuickSourceOpen, setNewQuickSourceOpen] = useState<boolean>(false);
@@ -295,497 +355,398 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   if (!isOpen) return null;
 
+  const q = filter.trim().toLowerCase();
+  const entityList = projectData?.entities || [];
+  const filteredEntities = q
+    ? entityList.filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          e.type.includes(q) ||
+          e.aliases.some((a) => a.toLowerCase().includes(q))
+      )
+    : entityList;
+  const sortedEntities = [...filteredEntities].sort((a, b) =>
+    entitySort === 'degree'
+      ? (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0) || a.name.localeCompare(b.name)
+      : a.name.localeCompare(b.name)
+  );
+  const groupedEntities = ENTITY_TYPES.map((t) => ({
+    type: t.type,
+    label: t.label,
+    color: t.color,
+    items: sortedEntities.filter((e) => e.type === t.type),
+  })).filter((g) => g.items.length > 0);
+
+  const entityName = (id: string) => entityById.get(id)?.name || id;
+  const filteredRels = (projectData?.relationships || []).filter(
+    (r) =>
+      !q ||
+      r.type.toLowerCase().includes(q) ||
+      entityName(r.source_entity).toLowerCase().includes(q) ||
+      entityName(r.target_entity).toLowerCase().includes(q)
+  );
+  const filteredSources = (projectData?.sources || []).filter(
+    (s) => !q || s.title.toLowerCase().includes(q) || (s.url || '').toLowerCase().includes(q)
+  );
+  const filteredNotes = (projectData?.notes || []).filter((n) => !q || n.title.toLowerCase().includes(q));
+  const filteredQuick = quickSources.filter(
+    (qs) => !q || qs.title.toLowerCase().includes(q) || (qs.url || '').toLowerCase().includes(q)
+  );
+
+  const views: { id: ExplorerView; label: string; count: number }[] = [
+    { id: 'entities', label: 'Entities', count: entityList.length },
+    { id: 'links', label: 'Links', count: projectData?.relationships.length || 0 },
+    { id: 'sources', label: 'Sources', count: projectData?.sources.length || 0 },
+    { id: 'notes', label: 'Notes', count: projectData?.notes.length || 0 },
+    { id: 'tools', label: 'Tools', count: quickSources.length },
+  ];
+
+  const handleAdd = () => {
+    if (view === 'entities') onCreateEntityModal();
+    else if (view === 'links') onCreateRelationshipModal();
+    else if (view === 'sources') onCreateSourceModal();
+    else if (view === 'notes') onCreateNoteModal();
+    else setNewQuickSourceOpen(true);
+  };
+  const addLabel = { entities: 'New entity', links: 'New relationship', sources: 'New source', notes: 'New note', tools: 'Add tool / API' }[view];
+
+  const Empty: React.FC<{ text: string }> = ({ text }) => (
+    <div className="px-3 py-3 text-[11.5px] text-zinc-600">{q ? 'No matches' : text}</div>
+  );
+
   return (
     <aside
       style={{ width: `${width}px` }}
-      className="bg-obsidian-sidebar border-r border-obsidian-border flex flex-col h-full overflow-hidden select-none text-xs relative shrink-0"
+      className="bg-[var(--t-panel)] border-r border-[var(--t-border)] flex h-full overflow-hidden select-none text-[12px] relative shrink-0"
     >
-      {/* Right Edge Resize Handle */}
+      {/* Resize handle */}
       <div
         onMouseDown={handleMouseDownResize}
         onDoubleClick={onResetWidth}
-        className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors z-40 group"
-        title="Drag to resize sidebar (double-click to reset)"
-      >
-        <div className="w-[1px] h-full mx-auto bg-transparent group-hover:bg-indigo-400 group-active:bg-indigo-400" />
-      </div>
+        className="absolute top-0 -right-px w-[5px] h-full cursor-col-resize z-40 hover:bg-[var(--t-accent)]/40 active:bg-[var(--t-accent)]/60"
+        title="Drag to resize · double-click to reset"
+      />
 
-      {/* Main Navigation Views */}
-      <div className="p-2 border-b border-obsidian-border space-y-0.5">
-        <button
-          type="button"
-          onClick={() => onOpenTab('graph', undefined, 'Interactive Graph')}
-          className={`w-full px-2.5 py-1.5 rounded-lg flex items-center space-x-2 transition-colors ${
-            activeTabType === 'graph'
-              ? 'bg-obsidian-accent text-white font-medium'
-              : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover'
-          }`}
-        >
-          <Network className="w-3.5 h-3.5" />
-          <span>Graph Visualization</span>
-        </button>
+      {/* Activity rail */}
+      <nav className="w-[38px] shrink-0 flex flex-col items-center py-1.5 gap-0.5 border-r border-[var(--t-border)] bg-[var(--t-bg)]">
+        <RailButton active={activeTabType === 'graph'} title="Graph  (⌘G)" onClick={() => onOpenTab('graph', undefined, 'Interactive Graph')}>
+          <Network />
+        </RailButton>
+        <RailButton active={activeTabType === 'overview'} title="Case brief  (⌘O)" onClick={() => onOpenTab('overview', undefined, 'Project Overview')}>
+          <LayoutDashboard />
+        </RailButton>
+        <RailButton active={activeTabType === 'search'} title="Full-text search  (⌘F)" onClick={() => onOpenTab('search', undefined, 'Full-Text Search')}>
+          <Search />
+        </RailButton>
+        <div className="flex-1" />
+        <RailButton title="Import case archive (.zip)" onClick={onImportZip}>
+          <Upload />
+        </RailButton>
+        <RailButton title="Export case archive (.zip)" onClick={onExportZip}>
+          <Download />
+        </RailButton>
+        {onOpenInExplorer && (
+          <RailButton title={isDesktop ? 'Reveal case folder' : 'Download case files'} onClick={() => onOpenInExplorer(activeProjectId)}>
+            <FolderOpen />
+          </RailButton>
+        )}
+        <RailButton title="Rebuild full-text index" onClick={onRebuildIndex}>
+          <RefreshCw />
+        </RailButton>
+        <div className="w-5 h-px bg-[var(--t-border)] my-1" />
+        {onOpenShortcuts && (
+          <RailButton title="Keyboard shortcuts  (?)" onClick={onOpenShortcuts}>
+            <Keyboard />
+          </RailButton>
+        )}
+        {onOpenSettings && (
+          <RailButton title="Settings  (⌘,)" onClick={onOpenSettings}>
+            <Settings />
+          </RailButton>
+        )}
+      </nav>
 
-        <button
-          type="button"
-          onClick={() => onOpenTab('overview', undefined, 'Project Overview')}
-          className={`w-full px-2.5 py-1.5 rounded-lg flex items-center space-x-2 transition-colors ${
-            activeTabType === 'overview'
-              ? 'bg-obsidian-accent text-white font-medium'
-              : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover'
-          }`}
-        >
-          <LayoutDashboard className="w-3.5 h-3.5" />
-          <span>Project Overview</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onOpenTab('search', undefined, 'Full-Text Search')}
-          className={`w-full px-2.5 py-1.5 rounded-lg flex items-center space-x-2 transition-colors ${
-            activeTabType === 'search'
-              ? 'bg-obsidian-accent text-white font-medium'
-              : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover'
-          }`}
-        >
-          <Search className="w-3.5 h-3.5" />
-          <span>Search Investigation</span>
-        </button>
-      </div>
-
-      {/* Scrollable Tree Browser */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {/* Entities Section */}
-        <div>
-          <div className="flex items-center justify-between py-1 px-1 text-obsidian-muted hover:text-white">
+      {/* Explorer */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="h-[28px] flex items-stretch border-b border-[var(--t-border)] shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          {views.map((v) => (
             <button
+              key={v.id}
               type="button"
-              onClick={() => setEntitiesOpen(!entitiesOpen)}
-              className="flex items-center space-x-1.5 font-semibold uppercase text-[10px] tracking-wider"
+              onClick={() => setView(v.id)}
+              className={`relative px-[7px] flex items-center gap-1 text-[11.5px] shrink-0 ${
+                view === v.id
+                  ? 'text-zinc-100 after:absolute after:inset-x-1.5 after:bottom-0 after:h-px after:bg-[var(--t-accent)]'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
             >
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${entitiesOpen ? 'rotate-90' : ''}`}
-              />
-              <Users className="w-3 h-3 text-indigo-400" />
-              <span>Entities ({projectData?.entities.length || 0})</span>
+              <span>{v.label}</span>
+              {view === v.id && <span className="font-mono text-[10px] text-zinc-500 tabular-nums">{v.count}</span>}
             </button>
-            <button
-              type="button"
-              onClick={() => onCreateEntityModal()}
-              className="p-0.5 hover:text-obsidian-accent rounded transition-colors"
-              title="Add Entity"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {entitiesOpen && projectData && (
-            <div className="pl-2 space-y-0.5 mt-0.5">
-              {projectData.entities.map((entity) => {
-                const isActive = activeTabType === 'entity' && activeTargetId === entity.id;
-                return (
-                  <div
-                    key={entity.id}
-                    onClick={() => onOpenTab('entity', entity.id, entity.name, { isPreview: true })}
-                    onDoubleClick={() => onOpenTab('entity', entity.id, entity.name, { isPinned: true, isPreview: false })}
-                    onContextMenu={(e) => openContextMenu(e, 'entity', entity.id, entity.name, { type: entity.type })}
-                    className={`px-2 py-1 rounded-md flex items-center justify-between cursor-pointer transition-colors ${
-                      isActive
-                        ? 'bg-obsidian-hover text-white font-medium border-l-2 border-obsidian-accent'
-                        : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover/50'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2 truncate">
-                      <EntityIcon type={entity.type} className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{entity.name}</span>
-                    </div>
-                    <span className="text-[10px] text-obsidian-dim font-mono">{entity.type}</span>
-                  </div>
-                );
-              })}
-              {projectData.entities.length === 0 && (
-                <div className="text-[11px] text-obsidian-dim italic px-2 py-1">No entities yet</div>
-              )}
-            </div>
-          )}
+          ))}
         </div>
 
-        {/* Relationships Section */}
-        <div>
-          <div className="flex items-center justify-between py-1 px-1 text-obsidian-muted hover:text-white">
-            <button
-              type="button"
-              onClick={() => setRelationshipsOpen(!relationshipsOpen)}
-              className="flex items-center space-x-1.5 font-semibold uppercase text-[10px] tracking-wider"
-            >
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${relationshipsOpen ? 'rotate-90' : ''}`}
-              />
-              <Share2 className="w-3 h-3 text-purple-400" />
-              <span>Relationships ({projectData?.relationships.length || 0})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onCreateRelationshipModal()}
-              className="p-0.5 hover:text-obsidian-accent rounded transition-colors"
-              title="Add Relationship"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+        <div className="flex items-center gap-1 px-1.5 py-1.5 border-b border-[var(--t-border-subtle)] shrink-0">
+          <div className="relative flex-1 min-w-0">
+            <Filter className="w-3 h-3 text-zinc-600 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setFilter('');
+              }}
+              placeholder={`Filter ${view === 'links' ? 'relationships' : view}…`}
+              className="t-input !pl-6"
+            />
           </div>
+          {view === 'entities' && (
+            <button
+              type="button"
+              className="t-icon-btn"
+              data-active={entitySort === 'degree'}
+              onClick={() => setEntitySort(entitySort === 'degree' ? 'name' : 'degree')}
+              title={entitySort === 'degree' ? 'Sorted by connections (click for A–Z)' : 'Sorted A–Z (click to sort by connections)'}
+            >
+              {entitySort === 'degree' ? <ArrowDownWideNarrow /> : <ArrowDownAZ />}
+            </button>
+          )}
+          <button type="button" className="t-icon-btn" onClick={handleAdd} title={addLabel}>
+            <Plus />
+          </button>
+        </div>
 
-          {relationshipsOpen && projectData && (
-            <div className="pl-2 space-y-0.5 mt-0.5">
-              {projectData.relationships.map((rel) => {
+        <div className="flex-1 overflow-y-auto py-0.5">
+          {view === 'entities' &&
+            (groupedEntities.length === 0 ? (
+              <Empty text="No entities yet" />
+            ) : (
+              groupedEntities.map((g) => {
+                const collapsed = collapsedGroups.has(g.type) && !q;
+                return (
+                  <div key={g.type}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(g.type)}
+                      className="w-full h-[22px] flex items-center gap-1.5 pl-1.5 pr-2 text-zinc-500 hover:text-zinc-300 sticky top-0 bg-[var(--t-panel)] z-[1]"
+                    >
+                      <ChevronRight className={`w-3 h-3 shrink-0 ${collapsed ? '' : 'rotate-90'}`} />
+                      <span className="t-swatch" style={{ background: g.color }} />
+                      <span className="t-label !text-zinc-500 flex-1 text-left">{g.label}</span>
+                      <span className="font-mono text-[10px] tabular-nums">{g.items.length}</span>
+                    </button>
+                    {!collapsed &&
+                      g.items.map((entity) => {
+                        const isActive = activeTabType === 'entity' && activeTargetId === entity.id;
+                        const deg = degreeMap.get(entity.id) || 0;
+                        return (
+                          <div
+                            key={entity.id}
+                            data-selected={isActive}
+                            onClick={() => onOpenTab('entity', entity.id, entity.name, { isPreview: true })}
+                            onDoubleClick={() => onOpenTab('entity', entity.id, entity.name, { isPinned: true, isPreview: false })}
+                            onContextMenu={(e) => openContextMenu(e, 'entity', entity.id, entity.name, { type: entity.type })}
+                            className="t-row !pl-[26px]"
+                            title={entity.aliases.length ? `${entity.name}\naka ${entity.aliases.join(', ')}` : entity.name}
+                          >
+                            <span className="truncate flex-1">{entity.name}</span>
+                            {deg > 0 && <span className="font-mono text-[10px] text-zinc-600 tabular-nums">{deg}</span>}
+                          </div>
+                        );
+                      })}
+                  </div>
+                );
+              })
+            ))}
+
+          {view === 'links' &&
+            (filteredRels.length === 0 ? (
+              <Empty text="No relationships yet" />
+            ) : (
+              filteredRels.map((rel) => {
                 const isActive = activeTabType === 'relationship' && activeTargetId === rel.id;
                 return (
                   <div
                     key={rel.id}
+                    data-selected={isActive}
                     onClick={() => onOpenTab('relationship', rel.id, `Rel: ${rel.type}`, { isPreview: true })}
                     onDoubleClick={() => onOpenTab('relationship', rel.id, `Rel: ${rel.type}`, { isPinned: true, isPreview: false })}
                     onContextMenu={(e) => openContextMenu(e, 'relationship', rel.id, `Rel: ${rel.type}`)}
-                    className={`px-2 py-1 rounded-md flex items-center justify-between cursor-pointer transition-colors ${
-                      isActive
-                        ? 'bg-obsidian-hover text-white font-medium border-l-2 border-obsidian-accent'
-                        : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover/50'
-                    }`}
+                    className="t-row !h-[36px] !items-start !flex-col !gap-0 justify-center"
                   >
-                    <div className="flex items-center space-x-1.5 truncate mr-1 font-mono text-[11px] text-purple-300">
-                      <Share2 className="w-3 h-3 text-purple-400/70 shrink-0" />
-                      <span className="truncate">{rel.type}</span>
-                    </div>
-                    <StatusBadge status={rel.status} size="sm" />
-                  </div>
-                );
-              })}
-              {projectData.relationships.length === 0 && (
-                <div className="text-[11px] text-obsidian-dim italic px-2 py-1">
-                  No relationships yet
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Quick Access Sources (Global / Independent of Project) */}
-        <div>
-          <div className="flex items-center justify-between py-1 px-1 text-obsidian-muted hover:text-white">
-            <button
-              type="button"
-              onClick={() => setQuickSourcesOpen(!quickSourcesOpen)}
-              className="flex items-center space-x-1.5 font-semibold uppercase text-[10px] tracking-wider text-amber-400/90"
-            >
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${quickSourcesOpen ? 'rotate-90' : ''}`}
-              />
-              <Star className="w-3 h-3 text-amber-400 fill-amber-400/40" />
-              <span>Quick Sources ({quickSources.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewQuickSourceOpen(true)}
-              className="p-0.5 hover:text-amber-400 rounded transition-colors text-obsidian-muted"
-              title="Add Quick Access Source"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {quickSourcesOpen && (
-            <div className="pl-2 space-y-0.5 mt-0.5">
-              {quickSources.map((qs) => {
-                return (
-                  <div
-                    key={qs.id}
-                    onClick={() => {
-                      if (qs.source_type === 'api') {
-                        setApiModalQs(qs);
-                      } else if (qs.projectId && qs.projectId === activeProjectId) {
-                        onOpenTab('source', qs.id.replace('qs-', ''), qs.title, { isPreview: true });
-                      } else if (qs.url && isSafeUrl(qs.url)) {
-                        window.open(qs.url, '_blank');
-                      }
-                    }}
-                    className="group px-2 py-1 rounded-md flex items-center justify-between cursor-pointer transition-colors text-zinc-300 hover:text-white hover:bg-white/5"
-                    title={`${qs.title}${qs.url ? ` (${qs.url})` : ''}\n${qs.source_type === 'api' ? 'Click to open API Console' : 'Click to open'}`}
-                  >
-                    <div className="flex items-center space-x-1.5 truncate flex-1 min-w-0 mr-1.5">
-                      {qs.source_type === 'api' ? (
-                        <Code className="w-3 h-3 text-purple-400 shrink-0" />
-                      ) : (
-                        <Globe className="w-3 h-3 text-amber-400/80 shrink-0" />
-                      )}
-                      <span className="truncate text-xs">{qs.title}</span>
-                      {qs.source_type === 'api' && qs.method && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono font-bold shrink-0">
-                          {qs.method}
-                        </span>
+                    <div className="w-full flex items-center gap-1.5 min-w-0">
+                      <StatusBadge status={rel.status} compact />
+                      <span className="font-mono text-[11px] text-zinc-300 truncate">{rel.type}</span>
+                      {rel.confidence != null && (
+                        <span className="ml-auto font-mono text-[10px] text-zinc-600 tabular-nums">{rel.confidence}%</span>
                       )}
                     </div>
-
-                    <div className="flex items-center space-x-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {qs.source_type === 'api' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setApiModalQs(qs);
-                          }}
-                          className="p-0.5 text-obsidian-dim hover:text-purple-400 rounded"
-                          title="Execute / Configure API Request"
-                        >
-                          <Play className="w-3 h-3 fill-purple-400/20 text-purple-400" />
-                        </button>
-                      )}
-                      {qs.url && (
-                        <a
-                          href={qs.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="p-0.5 text-obsidian-dim hover:text-emerald-400 rounded"
-                          title="Open URL in Browser"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                      {onRemoveQuickSource && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRemoveQuickSource(qs.id);
-                          }}
-                          className="p-0.5 text-obsidian-dim hover:text-rose-400 rounded"
-                          title="Remove from Quick Sources"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
+                    <div className="w-full truncate text-[11px] text-zinc-500 pl-[18px]">
+                      {entityName(rel.source_entity)}
+                      <span className="text-zinc-600">{rel.directed === false ? ' — ' : ' → '}</span>
+                      {entityName(rel.target_entity)}
                     </div>
                   </div>
                 );
-              })}
+              })
+            ))}
 
-              {quickSources.length === 0 && (
-                <div className="px-2 py-1.5 bg-[#18181f]/60 border border-white/5 rounded-lg text-center space-y-1.5 my-1">
-                  <div className="text-[10px] text-obsidian-dim">No quick sources yet</div>
-                  {onAddQuickSource && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        OSINT_STARTER_PACK.forEach((tool) => onAddQuickSource(tool));
-                      }}
-                      className="w-full text-[10px] py-1 px-2 rounded bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 flex items-center justify-center space-x-1 transition-colors"
-                    >
-                      <Zap className="w-3 h-3 text-amber-400" />
-                      <span>Load OSINT Presets</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Sources Section */}
-        <div>
-          <div className="flex items-center justify-between py-1 px-1 text-obsidian-muted hover:text-white">
-            <button
-              type="button"
-              onClick={() => setSourcesOpen(!sourcesOpen)}
-              className="flex items-center space-x-1.5 font-semibold uppercase text-[10px] tracking-wider"
-            >
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${sourcesOpen ? 'rotate-90' : ''}`}
-              />
-              <Link2 className="w-3 h-3 text-emerald-400" />
-              <span>Sources ({projectData?.sources.length || 0})</span>
-            </button>
-            <button
-              type="button"
-              onClick={onCreateSourceModal}
-              className="p-0.5 hover:text-obsidian-accent rounded transition-colors"
-              title="Add Source"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {sourcesOpen && projectData && (
-            <div className="pl-2 space-y-0.5 mt-0.5">
-              {projectData.sources.map((src) => {
+          {view === 'sources' &&
+            (filteredSources.length === 0 ? (
+              <Empty text="No sources yet" />
+            ) : (
+              filteredSources.map((src) => {
                 const isActive = activeTabType === 'source' && activeTargetId === src.id;
                 return (
                   <div
                     key={src.id}
+                    data-selected={isActive}
                     onClick={() => onOpenTab('source', src.id, src.title, { isPreview: true })}
                     onDoubleClick={() => onOpenTab('source', src.id, src.title, { isPinned: true, isPreview: false })}
                     onContextMenu={(e) => openContextMenu(e, 'source', src.id, src.title)}
-                    className={`px-2 py-1 rounded-md flex items-center justify-between cursor-pointer transition-colors ${
-                      isActive
-                        ? 'bg-obsidian-hover text-white font-medium border-l-2 border-obsidian-accent'
-                        : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover/50'
-                    }`}
+                    className="t-row"
+                    title={src.url || src.title}
                   >
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <Link2 className="w-3 h-3 text-emerald-400/70 shrink-0" />
-                      <span className="truncate">{src.title}</span>
-                    </div>
-                    <span className="text-[10px] text-obsidian-dim font-mono">{src.source_type}</span>
+                    <span className="truncate flex-1">{src.title}</span>
+                    {isSourceQuickPinned?.(src.id) && <Bookmark className="w-3 h-3 text-zinc-500 shrink-0" />}
+                    <span className="font-mono text-[10px] text-zinc-600 shrink-0">{src.source_type}</span>
                   </div>
                 );
-              })}
-              {projectData.sources.length === 0 && (
-                <div className="text-[11px] text-obsidian-dim italic px-2 py-1">No sources yet</div>
-              )}
-            </div>
-          )}
-        </div>
+              })
+            ))}
 
-        {/* Notes Section */}
-        <div>
-          <div className="flex items-center justify-between py-1 px-1 text-obsidian-muted hover:text-white">
-            <button
-              type="button"
-              onClick={() => setNotesOpen(!notesOpen)}
-              className="flex items-center space-x-1.5 font-semibold uppercase text-[10px] tracking-wider"
-            >
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${notesOpen ? 'rotate-90' : ''}`}
-              />
-              <FileText className="w-3 h-3 text-amber-400" />
-              <span>Notes ({projectData?.notes.length || 0})</span>
-            </button>
-            <button
-              type="button"
-              onClick={onCreateNoteModal}
-              className="p-0.5 hover:text-obsidian-accent rounded transition-colors"
-              title="Add Note"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {notesOpen && projectData && (
-            <div className="pl-2 space-y-0.5 mt-0.5">
-              {projectData.notes.map((note) => {
+          {view === 'notes' &&
+            (filteredNotes.length === 0 ? (
+              <Empty text="No notes yet" />
+            ) : (
+              filteredNotes.map((note) => {
                 const isActive = activeTabType === 'note' && activeTargetId === note.id;
                 return (
                   <div
                     key={note.id}
+                    data-selected={isActive}
                     onClick={() => onOpenTab('note', note.id, note.title, { isPreview: true })}
                     onDoubleClick={() => onOpenTab('note', note.id, note.title, { isPinned: true, isPreview: false })}
                     onContextMenu={(e) => openContextMenu(e, 'note', note.id, note.title)}
-                    className={`px-2 py-1 rounded-md flex items-center justify-between cursor-pointer transition-colors ${
-                      isActive
-                        ? 'bg-obsidian-hover text-white font-medium border-l-2 border-obsidian-accent'
-                        : 'text-obsidian-muted hover:text-obsidian-text hover:bg-obsidian-hover/50'
-                    }`}
+                    className="t-row"
                   >
-                    <div className="flex items-center space-x-1.5 truncate">
-                      <FileText className="w-3 h-3 text-amber-400/70 shrink-0" />
-                      <span className="truncate">{note.title}</span>
-                    </div>
+                    <span className="truncate flex-1">{note.title}</span>
+                    <span className="font-mono text-[10px] text-zinc-600 shrink-0 tabular-nums">
+                      {(note.updated_at || '').slice(0, 10)}
+                    </span>
                   </div>
                 );
-              })}
-              {projectData.notes.length === 0 && (
-                <div className="text-[11px] text-obsidian-dim italic px-2 py-1">No notes yet</div>
+              })
+            ))}
+
+          {view === 'tools' && (
+            <>
+              {filteredQuick.map((qs) => (
+                <div
+                  key={qs.id}
+                  onClick={() => {
+                    if (qs.source_type === 'api') {
+                      setApiModalQs(qs);
+                    } else if (qs.projectId && qs.projectId === activeProjectId) {
+                      onOpenTab('source', qs.id.replace('qs-', ''), qs.title, { isPreview: true });
+                    } else if (qs.url && isSafeUrl(qs.url)) {
+                      window.open(qs.url, '_blank');
+                    }
+                  }}
+                  className="group t-row"
+                  title={`${qs.title}${qs.url ? `\n${qs.url}` : ''}${qs.description ? `\n${qs.description}` : ''}`}
+                >
+                  <span className="font-mono text-[9.5px] w-8 shrink-0 text-zinc-500">
+                    {qs.source_type === 'api' ? qs.method || 'GET' : 'WEB'}
+                  </span>
+                  <span className="truncate flex-1">{qs.title}</span>
+                  <span className="hidden group-hover:flex items-center shrink-0">
+                    {qs.source_type === 'api' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setApiModalQs(qs);
+                        }}
+                        className="p-0.5 text-zinc-500 hover:text-zinc-100"
+                        title="Run request"
+                      >
+                        <Play className="w-3 h-3" />
+                      </button>
+                    )}
+                    {qs.url && (
+                      <a
+                        href={qs.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-0.5 text-zinc-500 hover:text-zinc-100"
+                        title="Open in browser"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                    {onRemoveQuickSource && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveQuickSource(qs.id);
+                        }}
+                        className="p-0.5 text-zinc-500 hover:text-rose-400"
+                        title="Remove"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+              {quickSources.length === 0 && (
+                <div className="px-3 py-3 space-y-2">
+                  <p className="text-[11.5px] text-zinc-600 leading-relaxed">
+                    Bookmark lookup tools and JSON APIs you use across investigations.
+                  </p>
+                  {onAddQuickSource && (
+                    <button
+                      type="button"
+                      onClick={() => OSINT_STARTER_PACK.forEach((tool) => onAddQuickSource(tool))}
+                      className="t-btn"
+                    >
+                      Add common OSINT tools
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
-      </div>
 
-      {/* Footer Utilities */}
-      <div className="p-2 border-t border-obsidian-border bg-[#18181c] flex items-center justify-between text-obsidian-dim">
-        <div className="flex items-center space-x-0.5">
-          {onOpenInExplorer && (
-            <button
-              type="button"
-              onClick={() => onOpenInExplorer(activeProjectId)}
-              className="p-1.5 hover:text-indigo-300 hover:bg-white/10 rounded-lg transition-colors"
-              title={isDesktop ? 'Show in Finder' : 'Download Project Files'}
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onExportZip}
-            className="p-1.5 hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-            title="Export Project ZIP"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onImportZip}
-            className="p-1.5 hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-            title="Import Project ZIP"
-          >
-            <Upload className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onRebuildIndex}
-            className="p-1.5 hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-            title="Rebuild SQLite FTS Index"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="flex items-center space-x-0.5">
-          {onOpenShortcuts && (
-            <button
-              type="button"
-              onClick={onOpenShortcuts}
-              className="p-1.5 hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-              title="Keyboard Shortcuts (?)"
-            >
-              <Keyboard className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {onOpenSettings && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="p-1.5 hover:text-white hover:bg-obsidian-hover rounded-lg transition-colors"
-              title="Application Settings (Cmd + ,)"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {currentProject && (
+        {currentProject && (
+          <div className="h-[24px] shrink-0 flex items-center justify-between px-2.5 border-t border-[var(--t-border)] text-[10.5px] text-zinc-600">
+            <span className="truncate font-mono">{currentProject.id}</span>
             <button
               type="button"
               onClick={() => onDeleteProject(currentProject.id)}
-              className="p-1.5 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors"
-              title="Delete Current Project"
+              className="text-zinc-600 hover:text-rose-400 shrink-0"
+              title="Delete this investigation"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3 h-3" />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Custom Context Menu Everywhere in Sidebar */}
       {contextMenu && contextMenu.visible && (
         <div
           data-sidebar-context-menu
-          className="fixed z-50 w-52 bg-[#141419]/95 backdrop-blur-xl border border-[#2e2e3d] rounded-xl shadow-2xl p-1 text-xs text-obsidian-text ring-1 ring-white/10 select-none animate-in fade-in zoom-in-95 duration-100"
+          className="t-menu fixed z-[80] w-52 select-none"
           style={{
             top: `${Math.min(contextMenu.y, window.innerHeight - 240)}px`,
             left: `${Math.min(contextMenu.x, window.innerWidth - 220)}px`,
           }}
         >
-          <div className="px-3 py-1.5 border-b border-[#252532] bg-[#1a1a24]/70 rounded-t-lg mb-1">
+          <div className="px-2.5 pt-1 pb-1.5 border-b border-[var(--t-border)] mb-[3px]">
             <div className="text-[10px] uppercase font-mono text-zinc-400 font-semibold truncate">
               {contextMenu.itemType}
             </div>
@@ -799,7 +760,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 onOpenTab(contextMenu.itemType, contextMenu.itemId, contextMenu.itemTitle, { isPreview: true });
                 setContextMenu(null);
               }}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
               <ExternalLink className="w-3.5 h-3.5 text-obsidian-accent" />
               <span>Open in Preview</span>
@@ -811,9 +772,9 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 onOpenTab(contextMenu.itemType, contextMenu.itemId, contextMenu.itemTitle, { isPinned: true, isPreview: false });
                 setContextMenu(null);
               }}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
-              <Pin className="w-3.5 h-3.5 text-amber-400" />
+              <Pin className="w-3.5 h-3.5 opacity-70" />
               <span>Open & Pin Tab</span>
             </button>
 
@@ -824,9 +785,9 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onCreateRelationshipModal(contextMenu.itemId);
                   setContextMenu(null);
                 }}
-                className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                className="t-menu-item"
               >
-                <Share2 className="w-3.5 h-3.5 text-sky-400" />
+                <Share2 className="w-3.5 h-3.5 opacity-70" />
                 <span>Create Relationship...</span>
               </button>
             )}
@@ -838,34 +799,34 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onTogglePinQuickSource(contextMenu.itemId);
                   setContextMenu(null);
                 }}
-                className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+                className="t-menu-item"
               >
-                <Star className={`w-3.5 h-3.5 ${isSourceQuickPinned?.(contextMenu.itemId) ? 'text-amber-400 fill-amber-400/40' : 'text-amber-400'}`} />
+                <Bookmark />
                 <span>{isSourceQuickPinned?.(contextMenu.itemId) ? 'Remove from Quick Access' : 'Pin to Quick Access'}</span>
               </button>
             )}
 
-            <div className="border-t border-[#252532] my-1" />
+            <div className="t-menu-sep" />
 
             <button
               type="button"
               onClick={() => copyToClipboard(contextMenu.itemTitle)}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
-              <Copy className="w-3.5 h-3.5 text-zinc-400" />
+              <Copy />
               <span>Copy Title</span>
             </button>
 
             <button
               type="button"
               onClick={() => copyToClipboard(contextMenu.itemId)}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
-              <Hash className="w-3.5 h-3.5 text-zinc-400" />
+              <Hash />
               <span>Copy ID</span>
             </button>
 
-            <div className="border-t border-[#252532] my-1" />
+            <div className="t-menu-sep" />
 
             <button
               type="button"
@@ -876,7 +837,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 else if (contextMenu.itemType === 'note') onDeleteNote?.(contextMenu.itemId);
                 setContextMenu(null);
               }}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 rounded-lg text-left transition-colors"
+              className="t-menu-item !text-rose-400 hover:!bg-rose-500/70 hover:!text-white"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete {contextMenu.itemType}</span>
@@ -887,12 +848,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
       {/* Modal to add new Quick Source */}
       {newQuickSourceOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#18181c] border border-obsidian-border rounded-xl max-w-sm w-full shadow-2xl p-4 text-xs space-y-3">
-            <div className="flex items-center justify-between border-b border-obsidian-border pb-2">
-              <div className="flex items-center space-x-1.5 font-semibold text-white">
-                <Star className="w-4 h-4 text-amber-400 fill-amber-400/40" />
-                <span>Add Quick Source</span>
+        <div className="fixed inset-0 z-[70] bg-black/55 flex items-center justify-center p-4">
+          <div className="bg-[var(--t-panel)] border border-[var(--t-border)] rounded max-w-sm w-full shadow-popover text-xs">
+            <div className="t-panel-head justify-between">
+              <div className="text-[12px] font-semibold text-zinc-100">
+                <span>Add tool or API</span>
               </div>
               <button
                 type="button"
@@ -923,22 +883,22 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 setNewQsBody('');
                 setNewQuickSourceOpen(false);
               }}
-              className="space-y-3"
+              className="space-y-3 p-3"
             >
               <div>
-                <label className="block text-[11px] text-obsidian-muted mb-1 font-medium">Source Title *</label>
+                <label className="block text-[11px] text-zinc-500 mb-1">Source Title *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. VirusTotal, Censys, WHOIS..."
                   value={newQsTitle}
                   onChange={(e) => setNewQsTitle(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-amber-400"
+                  className="t-input"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] text-obsidian-muted mb-1 font-medium">
+                <label className="block text-[11px] text-zinc-500 mb-1">
                   {newQsType === 'api' ? 'API Endpoint URL *' : 'URL (optional)'}
                 </label>
                 <input
@@ -947,16 +907,16 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   placeholder={newQsType === 'api' ? 'https://api.example.com/v1/...' : 'https://...'}
                   value={newQsUrl}
                   onChange={(e) => setNewQsUrl(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-amber-400 font-mono text-[11px]"
+                  className="t-input font-mono text-[11px]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] text-obsidian-muted mb-1 font-medium">Type</label>
+                <label className="block text-[11px] text-zinc-500 mb-1">Type</label>
                 <select
                   value={newQsType}
                   onChange={(e) => setNewQsType(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-amber-400 cursor-pointer"
+                  className="t-input cursor-pointer"
                 >
                   <option value="webpage">Webpage</option>
                   <option value="tool">OSINT Tool</option>
@@ -969,14 +929,14 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
               {/* API Specific Fields */}
               {newQsType === 'api' && (
-                <div className="p-2.5 rounded-lg bg-purple-950/20 border border-purple-500/30 space-y-2 text-xs">
+                <div className="pl-2.5 border-l border-[var(--t-border)] space-y-2 text-xs">
                   <div className="flex items-center space-x-2">
                     <div className="w-1/3">
-                      <label className="block text-[10px] text-purple-300 mb-1 font-medium">Method</label>
+                      <label className="block text-[10px] text-zinc-500 mb-1 font-medium">Method</label>
                       <select
                         value={newQsMethod}
                         onChange={(e) => setNewQsMethod(e.target.value as any)}
-                        className="w-full px-2 py-1 bg-[#141416] border border-obsidian-border rounded-lg text-xs font-mono font-bold text-white focus:outline-none focus:border-purple-400"
+                        className="w-full px-2 py-1 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs font-mono font-bold text-white focus:outline-none focus:border-[var(--t-accent)]"
                       >
                         <option value="GET">GET</option>
                         <option value="POST">POST</option>
@@ -987,26 +947,26 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     </div>
 
                     <div className="w-2/3">
-                      <label className="block text-[10px] text-purple-300 mb-1 font-medium">Headers (optional JSON)</label>
+                      <label className="block text-[10px] text-zinc-500 mb-1 font-medium">Headers (optional JSON)</label>
                       <input
                         type="text"
                         value={newQsHeaders}
                         onChange={(e) => setNewQsHeaders(e.target.value)}
                         placeholder='{"Accept": "application/json"}'
-                        className="w-full px-2 py-1 bg-[#141416] border border-obsidian-border rounded-lg text-xs font-mono text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-purple-400"
+                        className="w-full px-2 py-1 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs font-mono text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-[var(--t-accent)]"
                       />
                     </div>
                   </div>
 
                   {['POST', 'PUT', 'PATCH', 'DELETE'].includes(newQsMethod) && (
                     <div>
-                      <label className="block text-[10px] text-purple-300 mb-1 font-medium">Request Body</label>
+                      <label className="block text-[10px] text-zinc-500 mb-1 font-medium">Request Body</label>
                       <textarea
                         rows={2}
                         value={newQsBody}
                         onChange={(e) => setNewQsBody(e.target.value)}
                         placeholder='{"query": "example"}'
-                        className="w-full p-2 bg-[#141416] border border-obsidian-border rounded-lg text-xs font-mono text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-purple-400 resize-none"
+                        className="w-full p-2 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs font-mono text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-[var(--t-accent)] resize-none"
                       />
                     </div>
                   )}
@@ -1017,16 +977,16 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => setNewQuickSourceOpen(false)}
-                  className="px-3 py-1.5 bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text rounded-lg"
+                  className="t-btn"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!newQsTitle.trim() || (newQsType === 'api' && !newQsUrl.trim())}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-semibold rounded-lg disabled:opacity-50"
+                  className="t-btn t-btn-primary"
                 >
-                  Add Source
+                  Add
                 </button>
               </div>
             </form>

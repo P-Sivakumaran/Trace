@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useEscapeKey } from '@/components/common/Dialog';
 import { Entity, Relationship, EntityType, RelationshipStatus } from '@/types';
 import { EntityIcon, getEntityTypeColor } from '@/components/common/EntityIcon';
 import {
@@ -6,7 +7,7 @@ import {
   discoverRelationships,
 } from '@/services/discovery/relationshipDiscovery';
 import {
-  Sparkles,
+  ScanSearch,
   X,
   Check,
   CheckCheck,
@@ -84,6 +85,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
     });
   }, [allSuggestions, minConfidence, activeCategory, searchQuery]);
 
+  useEscapeKey(isOpen, onClose);
   if (!isOpen) return null;
 
   const toggleSelect = (id: string) => {
@@ -121,7 +123,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
   };
 
   const categories = [
-    { id: 'all', label: 'All', icon: Sparkles, count: allSuggestions.length },
+    { id: 'all', label: 'All', icon: ScanSearch, count: allSuggestions.length },
     {
       id: 'surname',
       label: 'Surnames',
@@ -161,13 +163,13 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#18181c] border border-obsidian-border rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-[70] bg-black/55 flex items-center justify-center p-4">
+      <div className="bg-[var(--t-raised)] border border-obsidian-border rounded max-w-2xl w-full shadow-popover flex flex-col max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-border bg-[#141417]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-border bg-[var(--t-panel)]">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-8 h-8 rounded bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+              <ScanSearch className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-white flex items-center space-x-2">
@@ -191,7 +193,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
         </div>
 
         {/* Filter bar */}
-        <div className="px-5 py-2.5 border-b border-obsidian-borderSubtle bg-[#161619] space-y-2">
+        <div className="px-5 py-2.5 border-b border-obsidian-borderSubtle bg-[var(--t-panel)] space-y-2">
           {/* Search & Confidence Slider */}
           <div className="flex items-center space-x-3">
             <div className="relative flex-1">
@@ -201,11 +203,11 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter by entity name, attribute or evidence..."
-                className="w-full pl-8 pr-3 py-1 bg-[#121215] border border-obsidian-border rounded-lg text-xs text-obsidian-text placeholder:text-obsidian-dim focus:outline-none focus:border-purple-500"
+                className="w-full pl-8 pr-3 py-1 bg-[var(--t-bg)] border border-obsidian-border rounded-lg text-xs text-obsidian-text placeholder:text-obsidian-dim focus:outline-none focus:border-[var(--t-accent)]"
               />
             </div>
 
-            <div className="flex items-center space-x-1.5 text-[11px] text-obsidian-dim shrink-0 bg-[#121215] px-2 py-1 rounded-lg border border-obsidian-border">
+            <div className="flex items-center space-x-1.5 text-[11px] text-obsidian-dim shrink-0 bg-[var(--t-bg)] px-2 py-1 rounded-lg border border-obsidian-border">
               <span>Min Conf:</span>
               <input
                 type="range"
@@ -258,10 +260,10 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
                 <div
                   key={sug.id}
                   onClick={() => toggleSelect(sug.id)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                  className={`p-3 rounded border transition-colors cursor-pointer select-none ${
                     isChecked
                       ? 'bg-purple-950/20 border-purple-500/40 shadow-sm'
-                      : 'bg-[#151518]/70 border-obsidian-borderSubtle hover:border-obsidian-border hover:bg-[#1a1a20]'
+                      : 'bg-[var(--t-panel)]/70 border-obsidian-borderSubtle hover:border-obsidian-border hover:bg-[var(--t-hover)]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -271,7 +273,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
                         className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${
                           isChecked
                             ? 'bg-purple-600 text-white'
-                            : 'border border-obsidian-border bg-[#101014]'
+                            : 'border border-obsidian-border bg-[var(--t-bg)]'
                         }`}
                       >
                         {isChecked && <Check className="w-3 h-3" />}
@@ -292,7 +294,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
                       </div>
 
                       {/* Arrow & Suggested Relation Type */}
-                      <div className="flex items-center space-x-1 shrink-0 px-2 py-0.5 rounded-full bg-[#202028] border border-obsidian-border text-[10px] text-purple-300 font-mono">
+                      <div className="flex items-center space-x-1 shrink-0 px-2 py-0.5 rounded-full bg-[var(--t-active)] border border-obsidian-border text-[10px] text-purple-300 font-mono">
                         <span>{sug.suggestedType}</span>
                         <ArrowRight className="w-2.5 h-2.5 text-obsidian-dim" />
                       </div>
@@ -340,7 +342,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
             })
           ) : (
             <div className="py-12 text-center space-y-2">
-              <Sparkles className="w-8 h-8 text-obsidian-dim mx-auto stroke-1" />
+              <ScanSearch className="w-8 h-8 text-obsidian-dim mx-auto stroke-1" />
               <div className="text-xs font-medium text-obsidian-muted">
                 {allSuggestions.length === 0
                   ? 'No potential relationships discovered yet'
@@ -356,7 +358,7 @@ export const RelationshipDiscoveryModal: React.FC<RelationshipDiscoveryModalProp
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-obsidian-border bg-[#141417] flex items-center justify-between text-xs">
+        <div className="px-5 py-3 border-t border-obsidian-border bg-[var(--t-panel)] flex items-center justify-between text-xs">
           <div className="flex items-center space-x-3">
             <span className="text-obsidian-dim text-[11px]">
               <strong className="text-white font-mono">{selectedIds.size}</strong> of{' '}

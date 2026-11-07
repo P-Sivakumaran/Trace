@@ -92,24 +92,24 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
   const targetEntity = getEntity(draft.target_entity);
 
   return (
-    <div className="h-full flex flex-col bg-obsidian-panel overflow-y-auto">
+    <div className="h-full flex flex-col bg-[var(--t-bg)] overflow-y-auto">
       {/* Top Header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3.5 bg-obsidian-panel/95 backdrop-blur border-b border-obsidian-border">
+      <div className="sticky top-0 z-20 h-[40px] shrink-0 flex items-center justify-between pl-4 pr-2 bg-[var(--t-panel)] border-b border-[var(--t-border)]">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-md bg-purple-950/40 border border-purple-800/60 flex items-center justify-center text-purple-400">
+          <div className="hidden">
             <ArrowRight className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs text-obsidian-dim">{draft.id}</span>
+              <span className="font-mono text-[10.5px] text-zinc-600">{draft.id}</span>
               <StatusBadge status={draft.status} size="sm" />
               {isDirty && (
-                <span className="text-[11px] bg-amber-950/80 border border-amber-800 text-amber-300 px-1.5 py-0.2 rounded font-medium">
+                <span className="text-[10.5px] text-amber-400">
                   Unsaved changes
                 </span>
               )}
             </div>
-            <h1 className="text-lg font-semibold text-obsidian-text">
+            <h1 className="text-[13.5px] font-semibold text-zinc-50 leading-tight">
               Relationship: <span className="text-purple-400">{draft.type}</span>
             </h1>
           </div>
@@ -119,9 +119,9 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
           <button
             type="button"
             onClick={() => onShowInGraph(draft.id)}
-            className="px-2.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[#2c2c36] text-obsidian-text border border-obsidian-border rounded-md transition-colors"
+            className="t-btn"
           >
-            <Layers className="w-3.5 h-3.5 text-sky-400" />
+            <Layers className="w-3.5 h-3.5 opacity-70" />
             <span>Show in Graph</span>
           </button>
 
@@ -129,10 +129,10 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
             type="button"
             onClick={handleSave}
             disabled={!isDirty}
-            className={`px-3 py-1.5 flex items-center space-x-1.5 text-xs rounded-md font-medium transition-colors ${
+            className={`t-btn ${
               isDirty
-                ? 'bg-obsidian-accent hover:bg-obsidian-accentHover text-white shadow-sm'
-                : 'bg-obsidian-card text-obsidian-dim cursor-not-allowed border border-obsidian-border'
+                ? 't-btn-primary'
+                : 'opacity-50 cursor-not-allowed'
             }`}
           >
             <Save className="w-3.5 h-3.5" />
@@ -142,7 +142,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
           <button
             type="button"
             onClick={() => onDelete(draft.id)}
-            className="p-1.5 text-obsidian-dim hover:text-rose-400 hover:bg-rose-950/40 rounded-md transition-colors"
+            className="t-icon-btn hover:!text-rose-400"
             title="Delete Relationship"
           >
             <Trash2 className="w-4 h-4" />
@@ -151,10 +151,10 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
       </div>
 
       {/* Editor Body */}
-      <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
+      <div className="px-6 py-4 max-w-[980px] w-full space-y-5">
         {/* Connection Setup Card */}
         <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-5 shadow-subtle">
-          <h2 className="text-sm font-semibold text-obsidian-text border-b border-obsidian-border pb-2">
+          <h2 className="t-label !text-zinc-400 border-b border-obsidian-border pb-2">
             Connected Entities & Predicate
           </h2>
 
@@ -167,13 +167,13 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <select
                 value={draft.source_entity}
                 onChange={(e) => updateDraft({ source_entity: e.target.value })}
-                className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="t-input !h-auto py-1.5 cursor-pointer"
               >
                 <option value="" disabled>
                   Select source entity...
                 </option>
                 {projectData.entities.map((e) => (
-                  <option key={e.id} value={e.id} className="bg-[#18181c]">
+                  <option key={e.id} value={e.id} className="bg-[var(--t-raised)]">
                     {e.name} ({e.type})
                   </option>
                 ))}
@@ -207,7 +207,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                 value={draft.type}
                 onChange={(e) => updateDraft({ type: e.target.value })}
                 placeholder="e.g. operates, owns..."
-                className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded text-xs font-mono text-purple-300 focus:outline-none focus:border-obsidian-accent"
+                className="w-full px-3 py-2 bg-[var(--t-panel)] border border-obsidian-border rounded text-xs font-mono text-purple-300 focus:outline-none focus:border-[var(--t-accent)]"
               />
               <datalist id="rel-types">
                 {COMMON_RELATIONSHIP_TYPES.map((t) => (
@@ -220,7 +220,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                     type="checkbox"
                     checked={draft.directed}
                     onChange={(e) => updateDraft({ directed: e.target.checked })}
-                    className="rounded bg-[#141416] border-obsidian-border text-obsidian-accent focus:ring-0"
+                    className="rounded bg-[var(--t-panel)] border-obsidian-border text-obsidian-accent focus:ring-0"
                   />
                   <span>Directed (→)</span>
                 </label>
@@ -235,7 +235,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <select
                 value={draft.target_entity}
                 onChange={(e) => updateDraft({ target_entity: e.target.value })}
-                className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="t-input !h-auto py-1.5 cursor-pointer"
               >
                 <option value="" disabled>
                   Select target entity...
@@ -243,7 +243,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                 {projectData.entities
                   .filter((e) => allowSelfRef || e.id !== draft.source_entity)
                   .map((e) => (
-                    <option key={e.id} value={e.id} className="bg-[#18181c]">
+                    <option key={e.id} value={e.id} className="bg-[var(--t-raised)]">
                       {e.name} ({e.type})
                     </option>
                   ))}
@@ -269,15 +269,15 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
         </div>
 
         {/* Verification Status & Confidence Score */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-4 shadow-subtle">
-          <h2 className="text-sm font-semibold text-obsidian-text border-b border-obsidian-border pb-2">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <h2 className="t-label !text-zinc-400 border-b border-obsidian-border pb-2">
             Verification Status & Evaluation
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Verification Status */}
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1.5">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Investigative Status *
               </label>
               <div className="grid grid-cols-1 gap-1.5">
@@ -287,7 +287,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                     className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-colors ${
                       draft.status === st.status
                         ? 'bg-obsidian-hover border-obsidian-accent'
-                        : 'bg-[#141416] border-obsidian-border hover:bg-obsidian-hover/60'
+                        : 'bg-[var(--t-panel)] border-obsidian-border hover:bg-obsidian-hover/60'
                     }`}
                   >
                     <div className="flex items-center space-x-2">
@@ -311,7 +311,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <label className="block text-xs font-medium text-obsidian-muted">
                 Confidence Estimate (Optional)
               </label>
-              <div className="p-3 bg-[#141416] border border-obsidian-border rounded-md space-y-3">
+              <div className="p-3 bg-[var(--t-panel)] border border-obsidian-border rounded-md space-y-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-obsidian-muted">Confidence:</span>
                   <span className="font-mono font-medium text-obsidian-text">
@@ -348,13 +348,10 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
         </div>
 
         {/* Linked Evidence Sources */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-3 shadow-subtle">
-          <div className="flex items-center justify-between border-b border-obsidian-border pb-2">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Supporting Evidence Sources</h2>
-              <p className="text-xs text-obsidian-dim">
-                Attach documented source files supporting this relationship claim
-              </p>
+              <h2 className="t-label !text-zinc-400">Supporting Evidence Sources</h2>
             </div>
           </div>
 
@@ -367,7 +364,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                   className={`flex items-center justify-between p-2.5 rounded border transition-colors ${
                     isChecked
                       ? 'bg-purple-950/20 border-purple-800/80'
-                      : 'bg-[#141416] border-obsidian-border hover:bg-obsidian-hover/50'
+                      : 'bg-[var(--t-panel)] border-obsidian-border hover:bg-obsidian-hover/50'
                   }`}
                 >
                   <label className="flex items-center space-x-2.5 cursor-pointer flex-1 mr-3">
@@ -375,7 +372,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                       type="checkbox"
                       checked={isChecked}
                       onChange={() => toggleEvidenceSource(src.id)}
-                      className="rounded bg-[#141416] border-obsidian-border text-obsidian-accent focus:ring-0"
+                      className="rounded bg-[var(--t-panel)] border-obsidian-border text-obsidian-accent focus:ring-0"
                     />
                     <div>
                       <div className="text-xs font-medium text-obsidian-text">{src.title}</div>
@@ -429,10 +426,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Relationship Explanation & Argument</h2>
-              <p className="text-xs text-obsidian-dim">
-                Explain why this relationship is considered, observed contradictions, and reasoning
-              </p>
+              <h2 className="t-label !text-zinc-400">Relationship Explanation & Argument</h2>
             </div>
           </div>
           <MarkdownEditor

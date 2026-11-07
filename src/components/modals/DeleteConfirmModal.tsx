@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { Dialog } from '@/components/common/Dialog';
 
 interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -19,73 +19,47 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   itemName,
   filePathsToDelete = [],
   warningMessage,
-}) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#18181c] border border-rose-900/60 rounded-lg max-w-md w-full shadow-popover overflow-hidden text-xs">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-border bg-rose-950/30">
-          <div className="flex items-center space-x-2 font-semibold text-rose-300">
-            <AlertTriangle className="w-4 h-4 text-rose-400" />
-            <span>{title}</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-obsidian-dim hover:text-white p-1 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4">
-          <p className="text-obsidian-text">
-            Are you sure you want to permanently delete <strong className="text-white">"{itemName}"</strong>?
-          </p>
-
-          {warningMessage && (
-            <p className="text-amber-300 bg-amber-950/40 border border-amber-800/60 p-2.5 rounded">
-              {warningMessage}
-            </p>
-          )}
-
-          {filePathsToDelete.length > 0 && (
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold text-obsidian-muted uppercase">
-                The following files and folders will be removed from your workspace:
-              </span>
-              <div className="bg-[#141416] p-2 rounded border border-obsidian-border max-h-36 overflow-y-auto space-y-1 font-mono text-[11px] text-rose-400/90">
-                {filePathsToDelete.map((f) => (
-                  <div key={f} className="truncate">
-                    • {f}
-                  </div>
-                ))}
+}) => (
+  <Dialog
+    isOpen={isOpen}
+    onClose={onClose}
+    title={title}
+    width={460}
+    footer={
+      <>
+        <button type="button" className="t-btn" onClick={onClose} autoFocus>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="t-btn !bg-rose-500/80 !border-rose-500/80 !text-white hover:!bg-rose-500"
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+        >
+          Delete
+        </button>
+      </>
+    }
+  >
+    <div className="p-3 space-y-3">
+      <p className="text-zinc-300 leading-relaxed">
+        Permanently delete <span className="text-zinc-50 font-medium">{itemName}</span>? This cannot be undone.
+      </p>
+      {warningMessage && <p className="text-amber-400 leading-relaxed">{warningMessage}</p>}
+      {filePathsToDelete.length > 0 && (
+        <div>
+          <div className="t-label mb-1">Files removed ({filePathsToDelete.length})</div>
+          <div className="bg-[var(--t-bg)] border border-[var(--t-border)] rounded-[3px] max-h-36 overflow-y-auto py-1 font-mono text-[11px] text-zinc-400">
+            {filePathsToDelete.map((f) => (
+              <div key={f} className="px-2 truncate" title={f}>
+                {f}
               </div>
-            </div>
-          )}
-
-          <div className="flex justify-end space-x-2 pt-2 border-t border-obsidian-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text rounded"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onConfirm();
-                onClose();
-              }}
-              className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium"
-            >
-              Confirm Deletion
-            </button>
+            ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
-  );
-};
+  </Dialog>
+);

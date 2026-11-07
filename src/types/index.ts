@@ -28,19 +28,19 @@ export type EntityType =
   | 'custom';
 
 export const ENTITY_TYPES: { type: EntityType; label: string; color: string; iconName: string }[] = [
-  { type: 'person', label: 'Person', color: '#38bdf8', iconName: 'User' },
-  { type: 'organization', label: 'Organization', color: '#818cf8', iconName: 'Users' },
-  { type: 'company', label: 'Company', color: '#60a5fa', iconName: 'Briefcase' },
-  { type: 'website', label: 'Website', color: '#34d399', iconName: 'Globe2' },
-  { type: 'domain', label: 'Domain', color: '#2dd4bf', iconName: 'Network' },
-  { type: 'account', label: 'Account', color: '#a78bfa', iconName: 'Fingerprint' },
-  { type: 'email', label: 'Email Address', color: '#fbbf24', iconName: 'Mail' },
-  { type: 'phone', label: 'Phone Number', color: '#f59e0b', iconName: 'Phone' },
-  { type: 'ip', label: 'IP Address', color: '#fb923c', iconName: 'Server' },
-  { type: 'location', label: 'Location', color: '#f87171', iconName: 'MapPin' },
-  { type: 'document', label: 'Document', color: '#94a3b8', iconName: 'FileText' },
-  { type: 'event', label: 'Event', color: '#eab308', iconName: 'Calendar' },
-  { type: 'custom', label: 'Custom', color: '#e879f9', iconName: 'Boxes' },
+  { type: 'person', label: 'Person', color: '#8a7bb8', iconName: 'User' },
+  { type: 'organization', label: 'Organization', color: '#c08a55', iconName: 'Users' },
+  { type: 'company', label: 'Company', color: '#b5835a', iconName: 'Briefcase' },
+  { type: 'website', label: 'Website', color: '#5c9e8f', iconName: 'Globe2' },
+  { type: 'domain', label: 'Domain', color: '#4fa3a0', iconName: 'Network' },
+  { type: 'account', label: 'Account', color: '#9a86b0', iconName: 'Fingerprint' },
+  { type: 'email', label: 'Email Address', color: '#b7a165', iconName: 'Mail' },
+  { type: 'phone', label: 'Phone Number', color: '#a8946a', iconName: 'Phone' },
+  { type: 'ip', label: 'IP Address', color: '#5b7fae', iconName: 'Server' },
+  { type: 'location', label: 'Location', color: '#6f9a68', iconName: 'MapPin' },
+  { type: 'document', label: 'Document', color: '#8b8f98', iconName: 'FileText' },
+  { type: 'event', label: 'Event', color: '#a99b5e', iconName: 'Calendar' },
+  { type: 'custom', label: 'Custom', color: '#9b7f97', iconName: 'Boxes' },
 ];
 
 export type RelationshipStatus =
@@ -56,11 +56,11 @@ export const RELATIONSHIP_STATUSES: {
   color: string;
   borderStyle: 'solid' | 'dashed' | 'dotted';
 }[] = [
-  { status: 'confirmed', label: 'Confirmed', color: '#34d399', borderStyle: 'solid' },
-  { status: 'supported', label: 'Supported', color: '#38bdf8', borderStyle: 'solid' },
-  { status: 'unverified', label: 'Unverified', color: '#eab308', borderStyle: 'dashed' },
-  { status: 'candidate', label: 'Candidate', color: '#94a3b8', borderStyle: 'dotted' },
-  { status: 'rejected', label: 'Rejected', color: '#f87171', borderStyle: 'dashed' },
+  { status: 'confirmed', label: 'Confirmed', color: '#6fae8c', borderStyle: 'solid' },
+  { status: 'supported', label: 'Supported', color: '#739cc0', borderStyle: 'solid' },
+  { status: 'unverified', label: 'Unverified', color: '#c6a463', borderStyle: 'dashed' },
+  { status: 'candidate', label: 'Candidate', color: '#7c8088', borderStyle: 'dotted' },
+  { status: 'rejected', label: 'Rejected', color: '#c97c7c', borderStyle: 'dashed' },
 ];
 
 export type SourceType =

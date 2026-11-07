@@ -60,184 +60,70 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const noteResults = results.filter((r) => r.type === 'note');
   const projectResults = results.filter((r) => r.type === 'project');
 
+  const groups: { label: string; items: typeof results }[] = [
+    { label: 'Entities', items: entityResults },
+    { label: 'Relationships', items: relResults },
+    { label: 'Sources', items: sourceResults },
+    { label: 'Notes', items: noteResults },
+  ].filter((g) => g.items.length > 0);
+
   return (
-    <div className="h-full flex flex-col bg-obsidian-panel overflow-y-auto">
-      {/* Header Search Box */}
-      <div className="sticky top-0 z-10 px-8 py-5 bg-obsidian-panel/95 backdrop-blur border-b border-obsidian-border">
-        <div className="max-w-3xl mx-auto">
-          <div className="relative flex items-center bg-[#141416] border border-obsidian-border rounded-lg shadow-subtle px-3 py-2.5">
-            <Search className="w-5 h-5 text-obsidian-muted mr-3" />
-            <input
-              type="text"
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search across entities, aliases, attributes, evidence, notes..."
-              className="bg-transparent flex-1 text-sm text-obsidian-text focus:outline-none placeholder:text-obsidian-dim"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="text-obsidian-dim hover:text-white p-1 rounded transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center justify-between text-xs text-obsidian-dim mt-2 px-1">
-            <span>Powered by local SQLite full-text index</span>
-            <span>{results.length} total matches</span>
-          </div>
+    <div className="h-full flex flex-col bg-[var(--t-bg)]">
+      <div className="h-[36px] shrink-0 flex items-center gap-2 px-2 border-b border-[var(--t-border)] bg-[var(--t-panel)]">
+        <div className="relative flex-1 max-w-[640px]">
+          <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+            placeholder="Search entities, aliases, attributes, evidence, notes"
+            className="t-input !h-[26px] !pl-7 !text-[12.5px]"
+          />
         </div>
+        {query && (
+          <button type="button" onClick={() => setQuery('')} className="t-icon-btn" title="Clear">
+            <X />
+          </button>
+        )}
+        <div className="flex-1" />
+        <span className="font-mono text-[10.5px] text-zinc-600 tabular-nums">
+          {isLoading ? 'searching…' : `${results.length} matches · SQLite FTS`}
+        </span>
       </div>
 
-      {/* Results Content */}
-      <div className="p-8 max-w-3xl w-full mx-auto space-y-6">
-        {isLoading && (
-          <div className="text-center py-8 text-xs text-obsidian-muted animate-pulse">
-            Querying local SQLite database...
+      <div className="flex-1 overflow-y-auto text-[12px]">
+        {!query && (
+          <div className="px-4 py-3 text-zinc-600">
+            Full-text search across every record in this case. Matches names, aliases, attribute values, source extracts and note bodies.
           </div>
         )}
-
         {!isLoading && query && results.length === 0 && (
-          <div className="text-center py-12 text-sm text-obsidian-dim space-y-2">
-            <div>No matching records found for "{query}".</div>
-            <div className="text-xs">Try searching by entity alias, IP address, tag, or domain.</div>
-          </div>
+          <div className="px-4 py-3 text-zinc-500">No records match “{query}”.</div>
         )}
-
-        {/* Entities Group */}
-        {entityResults.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase text-obsidian-muted tracking-wider flex items-center space-x-1.5">
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <span>Entities ({entityResults.length})</span>
+        {groups.map((g) => (
+          <section key={g.label}>
+            <div className="h-[24px] flex items-center gap-2 px-4 bg-[var(--t-panel)] border-b border-[var(--t-border)] sticky top-0">
+              <span className="t-label">{g.label}</span>
+              <span className="font-mono text-[10px] text-zinc-600 tabular-nums">{g.items.length}</span>
             </div>
-            <div className="space-y-1.5">
-              {entityResults.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => onSelectResult(item)}
-                  className="p-3 bg-obsidian-card hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors shadow-subtle flex items-start justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-sm text-obsidian-text">{item.title}</span>
-                      <span className="text-[11px] font-mono text-obsidian-dim">{item.id}</span>
-                    </div>
-                    <div className="text-xs text-obsidian-muted">{item.subtitle}</div>
-                    {item.snippet && (
-                      <div className="text-xs text-obsidian-dim font-mono bg-[#141416] p-1.5 rounded border border-obsidian-borderSubtle">
-                        {item.snippet}
-                      </div>
-                    )}
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-obsidian-dim" />
+            {g.items.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => onSelectResult(item)}
+                className="px-4 py-[5px] border-b border-[var(--t-border-subtle)] hover:bg-[var(--t-hover)] cursor-default"
+              >
+                <div className="flex items-baseline gap-2 min-w-0">
+                  <span className="text-zinc-100 truncate">{item.title}</span>
+                  <span className="text-[11px] text-zinc-500 truncate">{item.subtitle}</span>
+                  <span className="ml-auto font-mono text-[10px] text-zinc-600 shrink-0">{item.id}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Relationships Group */}
-        {relResults.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase text-obsidian-muted tracking-wider flex items-center space-x-1.5">
-              <Share2 className="w-3.5 h-3.5 text-purple-400" />
-              <span>Relationships ({relResults.length})</span>
-            </div>
-            <div className="space-y-1.5">
-              {relResults.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => onSelectResult(item)}
-                  className="p-3 bg-obsidian-card hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors shadow-subtle flex items-start justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-sm text-obsidian-text">{item.title}</span>
-                      <span className="text-[11px] font-mono text-obsidian-dim">{item.id}</span>
-                    </div>
-                    <div className="text-xs text-obsidian-muted">{item.subtitle}</div>
-                    {item.snippet && (
-                      <div className="text-xs text-obsidian-dim font-mono bg-[#141416] p-1.5 rounded border border-obsidian-borderSubtle">
-                        {item.snippet}
-                      </div>
-                    )}
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-obsidian-dim" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Sources Group */}
-        {sourceResults.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase text-obsidian-muted tracking-wider flex items-center space-x-1.5">
-              <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Sources & Evidence ({sourceResults.length})</span>
-            </div>
-            <div className="space-y-1.5">
-              {sourceResults.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => onSelectResult(item)}
-                  className="p-3 bg-obsidian-card hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors shadow-subtle flex items-start justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-sm text-obsidian-text">{item.title}</span>
-                      <span className="text-[11px] font-mono text-obsidian-dim">{item.id}</span>
-                    </div>
-                    <div className="text-xs text-obsidian-muted">{item.subtitle}</div>
-                    {item.snippet && (
-                      <div className="text-xs text-obsidian-dim font-mono bg-[#141416] p-1.5 rounded border border-obsidian-borderSubtle">
-                        {item.snippet}
-                      </div>
-                    )}
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-obsidian-dim" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Notes Group */}
-        {noteResults.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase text-obsidian-muted tracking-wider flex items-center space-x-1.5">
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
-              <span>Notes ({noteResults.length})</span>
-            </div>
-            <div className="space-y-1.5">
-              {noteResults.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => onSelectResult(item)}
-                  className="p-3 bg-obsidian-card hover:bg-obsidian-hover border border-obsidian-border rounded-lg cursor-pointer transition-colors shadow-subtle flex items-start justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-sm text-obsidian-text">{item.title}</span>
-                      <span className="text-[11px] font-mono text-obsidian-dim">{item.id}</span>
-                    </div>
-                    <div className="text-xs text-obsidian-muted">{item.subtitle}</div>
-                    {item.snippet && (
-                      <div className="text-xs text-obsidian-dim font-mono bg-[#141416] p-1.5 rounded border border-obsidian-borderSubtle">
-                        {item.snippet}
-                      </div>
-                    )}
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-obsidian-dim" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                {item.snippet && <div className="text-[11.5px] text-zinc-500 truncate font-mono">{item.snippet}</div>}
+              </div>
+            ))}
+          </section>
+        ))}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useEscapeKey } from '@/components/common/Dialog';
 import { X, FolderPlus } from 'lucide-react';
 
 interface NewProjectModalProps {
@@ -15,6 +16,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
+  useEscapeKey(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -27,9 +29,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#18181c] border border-obsidian-border rounded-lg max-w-md w-full shadow-popover overflow-hidden text-xs">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-border bg-[#151518]">
+    <div className="fixed inset-0 z-[70] bg-black/55 flex items-center justify-center p-4">
+      <div className="bg-[var(--t-panel)] border border-[#2e2f34] rounded-[4px] max-w-md w-full shadow-popover overflow-hidden text-[12px]">
+        <div className="h-[32px] flex items-center justify-between pl-3 pr-1.5 border-b border-[var(--t-border)]">
           <div className="flex items-center space-x-2 font-semibold text-obsidian-text">
             <FolderPlus className="w-4 h-4 text-obsidian-accent" />
             <span>New Investigation Project</span>
@@ -37,7 +39,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-obsidian-dim hover:text-white p-1 rounded"
+            className="t-icon-btn"
           >
             <X className="w-4 h-4" />
           </button>
@@ -45,7 +47,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Project Name *
             </label>
             <input
@@ -54,13 +56,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Operation Nightfall, Domain Clustered Research..."
-              className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+              className="t-input"
               required
             />
           </div>
 
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Investigation Objective & Scope
             </label>
             <textarea
@@ -68,7 +70,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Document the primary focus, target suspects, and research bounds..."
-              className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent resize-none leading-relaxed"
+              className="t-input !h-auto py-1.5 resize-none leading-relaxed"
             />
           </div>
 
@@ -76,14 +78,14 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text rounded"
+              className="t-btn"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
-              className="px-4 py-1.5 bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded font-medium disabled:opacity-50"
+              className="t-btn t-btn-primary"
             >
               Create Project
             </button>

@@ -69,14 +69,12 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-[#18181f] border border-obsidian-border rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/55">
+      <div className="bg-[var(--t-raised)] border border-obsidian-border rounded w-full max-w-2xl shadow-popover flex flex-col max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-border bg-[#141419]/80">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-obsidian-border bg-[var(--t-panel)]/80">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <Keyboard className="w-5 h-5" />
-            </div>
+            
             <div>
               <h2 className="text-sm font-semibold text-white">Keyboard Shortcuts</h2>
               <p className="text-[11px] text-obsidian-dim">Quick navigation and graph productivity keys</p>
@@ -125,7 +123,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-obsidian-border bg-[#141419]/60 flex items-center justify-between text-xs text-obsidian-dim">
+        <div className="px-5 py-3 border-t border-obsidian-border bg-[var(--t-panel)]/60 flex items-center justify-between text-[11px] text-zinc-600">
           <div className="flex items-center space-x-1.5">
             <Command className="w-3.5 h-3.5" />
             <span>Trace OSINT Investigation Tool</span>

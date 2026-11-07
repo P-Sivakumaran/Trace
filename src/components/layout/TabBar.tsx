@@ -69,20 +69,20 @@ export const TabBar: React.FC<TabBarProps> = ({
   const getTabIcon = (type: TabType) => {
     switch (type) {
       case 'graph':
-        return <Network className="w-3.5 h-3.5 text-purple-400 shrink-0" />;
+        return <Network className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'overview':
-        return <LayoutDashboard className="w-3.5 h-3.5 text-sky-400 shrink-0" />;
+        return <LayoutDashboard className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'search':
-        return <Search className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
+        return <Search className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'entity':
-        return <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />;
+        return <User className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'relationship':
-        return <Share2 className="w-3.5 h-3.5 text-violet-400 shrink-0" />;
+        return <Share2 className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'source':
-        return <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+        return <Link2 className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'note':
       default:
-        return <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
+        return <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />;
     }
   };
 
@@ -136,7 +136,7 @@ export const TabBar: React.FC<TabBarProps> = ({
 
   return (
     <div
-      className="h-full flex items-center space-x-1 select-none overflow-x-auto relative flex-1 min-w-0"
+      className="h-full flex items-stretch select-none overflow-x-auto relative flex-1 min-w-0 [&::-webkit-scrollbar]:hidden"
       style={{ WebkitAppRegion: 'drag' as any }}
       onAuxClick={(e) => {
         // Middle click on empty area opens a new tab!
@@ -193,14 +193,14 @@ export const TabBar: React.FC<TabBarProps> = ({
               }
             }}
             style={{ WebkitAppRegion: 'no-drag' as any }}
-            className={`group h-7 rounded-lg flex items-center text-xs cursor-pointer border transition-all duration-150 shrink-0 ${
-              tab.isPinned ? 'px-2 space-x-1' : 'px-2.5 space-x-1.5 max-w-[210px]'
+            className={`group relative h-full flex items-center text-[12px] cursor-default border-r border-[var(--t-border)] shrink-0 ${
+              tab.isPinned ? 'px-2.5 gap-1' : 'pl-2.5 pr-1.5 gap-1.5 max-w-[200px] min-w-[96px]'
             } ${
               isActive
-                ? 'bg-[#1e1e28] border-white/10 text-white font-medium shadow-xs'
-                : 'border-transparent text-obsidian-dim hover:text-white hover:bg-white/5'
+                ? 'bg-[var(--t-bg)] text-zinc-100 after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-[var(--t-accent)]'
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-[var(--t-hover)]'
             } ${isPreview ? 'italic' : ''} ${
-              isDragTarget ? 'ring-2 ring-indigo-500/80 scale-102' : ''
+              isDragTarget ? 'bg-[var(--t-accent-bg)]' : ''
             } ${isBeingDragged ? 'opacity-40' : ''}`}
             title={`${tab.title}${isPreview ? ' (Preview - double-click to pin)' : tab.isPinned ? ' (Pinned)' : ''}`}
           >
@@ -208,26 +208,26 @@ export const TabBar: React.FC<TabBarProps> = ({
               // Pinned tab: only tab icon and pinned icon (no title text!)
               <>
                 {getTabIcon(tab.type)}
-                <Pin className="w-2.5 h-2.5 text-amber-400/90 shrink-0 rotate-45" />
+                <Pin className="w-2.5 h-2.5 text-zinc-500 shrink-0 rotate-45" />
               </>
             ) : (
               // Normal tab: icon + title + close/dirty indicator
               <>
                 {getTabIcon(tab.type)}
-                <span className="truncate flex-1 text-[11px]">{tab.title}</span>
+                <span className="truncate flex-1">{tab.title}</span>
 
                 {/* Dirty indicator or Close button */}
                 {tab.isDirty ? (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Unsaved changes" />
+                  <span className="w-1.5 h-1.5 mx-1 rounded-full bg-zinc-300 shrink-0" title="Unsaved changes" />
                 ) : (
-                  tabs.length > 1 && (
+                  (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         onCloseTab(tab.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 hover:text-white hover:bg-obsidian-hover p-0.5 rounded text-obsidian-dim transition-opacity duration-150"
+                      className="opacity-0 group-hover:opacity-100 hover:text-white hover:bg-[var(--t-active)] p-0.5 rounded-[2px] text-zinc-500"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -243,8 +243,8 @@ export const TabBar: React.FC<TabBarProps> = ({
         type="button"
         onClick={onNewTab}
         style={{ WebkitAppRegion: 'no-drag' as any }}
-        className="p-1 text-obsidian-dim hover:text-white hover:bg-[#18181c] rounded transition-colors duration-150"
-        title="Open New Tab (Graph)"
+        className="t-icon-btn self-center mx-1"
+        title="New graph tab"
       >
         <Plus className="w-3.5 h-3.5" />
       </button>
@@ -253,7 +253,7 @@ export const TabBar: React.FC<TabBarProps> = ({
       {tabContextMenu && tabContextMenu.visible && currentContextTab && (
         <div
           data-tab-context-menu
-          className="fixed z-50 w-48 bg-[#141419]/95 backdrop-blur-xl border border-[#2e2e3d] rounded-xl shadow-2xl p-1 text-xs text-obsidian-text ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100"
+          className="t-menu fixed z-[80] w-48"
           style={{
             top: `${Math.min(tabContextMenu.y, window.innerHeight - 180)}px`,
             left: `${Math.min(tabContextMenu.x, window.innerWidth - 200)}px`,
@@ -266,17 +266,17 @@ export const TabBar: React.FC<TabBarProps> = ({
               onTogglePinTab?.(tabContextMenu.tabId);
               setTabContextMenu(null);
             }}
-            className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+            className="t-menu-item"
           >
             {currentContextTab.isPinned ? (
               <>
-                <PinOff className="w-3.5 h-3.5 text-amber-400" />
-                <span>Unpin Tab</span>
+                <PinOff />
+                <span>Unpin tab</span>
               </>
             ) : (
               <>
-                <Pin className="w-3.5 h-3.5 text-amber-400" />
-                <span>Pin Tab</span>
+                <Pin />
+                <span>Pin tab</span>
               </>
             )}
           </button>
@@ -287,10 +287,10 @@ export const TabBar: React.FC<TabBarProps> = ({
               onCloseTab(tabContextMenu.tabId);
               setTabContextMenu(null);
             }}
-            className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-200 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+            className="t-menu-item"
           >
-            <X className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Close Tab</span>
+            <X />
+            <span>Close</span>
           </button>
 
           {onCloseOtherTabs && tabs.length > 1 && (
@@ -300,9 +300,9 @@ export const TabBar: React.FC<TabBarProps> = ({
                 onCloseOtherTabs(tabContextMenu.tabId);
                 setTabContextMenu(null);
               }}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
-              <span>Close Other Tabs</span>
+              <span>Close others</span>
             </button>
           )}
 
@@ -313,9 +313,9 @@ export const TabBar: React.FC<TabBarProps> = ({
                 onCloseTabsToRight(tabContextMenu.tabId);
                 setTabContextMenu(null);
               }}
-              className="w-full px-2.5 py-1.5 flex items-center space-x-2 text-zinc-300 hover:text-white hover:bg-white/10 rounded-lg text-left transition-colors"
+              className="t-menu-item"
             >
-              <span>Close Tabs to the Right</span>
+              <span>Close tabs to the right</span>
             </button>
           )}
         </div>

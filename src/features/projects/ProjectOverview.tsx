@@ -1,21 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Project, ProjectData, RELATIONSHIP_STATUSES, ENTITY_TYPES } from '@/types';
-import { EntityIcon, getEntityTypeColor } from '@/components/common/EntityIcon';
-import { StatusBadge } from '@/components/common/StatusBadge';
+import { getEntityTypeColor } from '@/components/common/EntityIcon';
+import { StatusGlyph } from '@/components/common/StatusBadge';
 import { MarkdownEditor } from '@/components/common/MarkdownEditor';
-import {
-  Layers,
-  Share2,
-  Globe,
-  FileText,
-  Download,
-  RefreshCw,
-  Plus,
-  Calendar,
-  Save,
-  CheckCircle2,
-  FolderOpen,
-} from 'lucide-react';
+import { Network, Download, RefreshCw, Plus, Save, FolderOpen, Link2 } from 'lucide-react';
 
 interface ProjectOverviewProps {
   projectData: ProjectData;
@@ -29,6 +17,22 @@ interface ProjectOverviewProps {
   onOpenInExplorer?: () => void;
 }
 
+function fmt(iso: string) {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 16).replace('T', ' ');
+}
+
+const TableHead: React.FC<{ title: string; right?: React.ReactNode }> = ({ title, right }) => (
+  <div className="h-[26px] flex items-center justify-between px-3 border-b border-[var(--t-border-subtle)]">
+    <span className="t-label">{title}</span>
+    {right}
+  </div>
+);
+
+/**
+ * Case brief: the investigation's working document on the left, case facts
+ * and composition on the right. No dashboard cards.
+ */
 export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
   projectData,
   onSaveProject,
@@ -53,7 +57,9 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
     setIsDirty(false);
   };
 
-  // Stats calculation
+  const total = projectData.entities.length;
+  const relTotal = projectData.relationships.length;
+
   const entityTypeCounts = ENTITY_TYPES.map((t) => ({
     ...t,
     count: projectData.entities.filter((e) => e.type === t.type).length,
@@ -64,213 +70,155 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
     count: projectData.relationships.filter((r) => r.status === s.status).length,
   }));
 
+  const topEntities = useMemo(() => {
+    const deg = new Map<string, number>();
+    projectData.relationships.forEach((r) => {
+      deg.set(r.source_entity, (deg.get(r.source_entity) || 0) + 1);
+      deg.set(r.target_entity, (deg.get(r.target_entity) || 0) + 1);
+    });
+    return projectData.entities
+      .map((e) => ({ e, d: deg.get(e.id) || 0 }))
+      .filter((x) => x.d > 0)
+      .sort((a, b) => b.d - a.d)
+      .slice(0, 12);
+  }, [projectData.entities, projectData.relationships]);
+
+  const unsourced = projectData.relationships.filter((r) => !r.evidence || r.evidence.length === 0).length;
+
   return (
-    <div className="h-full flex flex-col bg-obsidian-panel overflow-y-auto">
-      {/* Top Banner */}
-      <div className="px-8 py-6 border-b border-obsidian-border bg-gradient-to-b from-[#18181d] to-obsidian-panel">
-        <div className="max-w-5xl mx-auto space-y-4">
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <span className="font-mono text-xs text-obsidian-dim uppercase tracking-wider">
-                Investigation Project • {draft.id}
-              </span>
-              <h1 className="text-2xl font-bold text-obsidian-text">{draft.name}</h1>
-              <div className="flex items-center space-x-4 text-xs text-obsidian-dim pt-1">
-                <span>Created: {new Date(draft.created_at).toLocaleDateString()}</span>
-                <span>•</span>
-                <span>Last Updated: {new Date(draft.updated_at).toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                onClick={onOpenGraph}
-                className="px-3.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded-md font-medium shadow-sm transition-colors"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Open Graph View</span>
-              </button>
-
-              {onOpenInExplorer && (
-                <button
-                  type="button"
-                  onClick={onOpenInExplorer}
-                  className="px-3.5 py-1.5 flex items-center space-x-1.5 text-xs bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-md font-medium transition-colors"
-                  title="Open project folder in macOS Finder"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Show in Finder</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={onExportZip}
-                className="px-3 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text border border-obsidian-border rounded-md transition-colors"
-                title="Export complete canonical Markdown structure as ZIP"
-              >
-                <Download className="w-3.5 h-3.5 text-obsidian-muted" />
-                <span>Export ZIP</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onRebuildIndex}
-                className="p-1.5 text-obsidian-dim hover:text-white bg-obsidian-hover rounded-md border border-obsidian-border transition-colors"
-                title="Rebuild SQLite search index from Markdown records"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-            <div className="bg-[#141416] border border-obsidian-border rounded-lg p-3">
-              <div className="flex items-center justify-between text-obsidian-muted text-xs">
-                <span>Entities</span>
-                <Layers className="w-4 h-4 text-sky-400" />
-              </div>
-              <div className="text-xl font-bold text-obsidian-text mt-1">
-                {projectData.entities.length}
-              </div>
-            </div>
-
-            <div className="bg-[#141416] border border-obsidian-border rounded-lg p-3">
-              <div className="flex items-center justify-between text-obsidian-muted text-xs">
-                <span>Relationships</span>
-                <Share2 className="w-4 h-4 text-purple-400" />
-              </div>
-              <div className="text-xl font-bold text-obsidian-text mt-1">
-                {projectData.relationships.length}
-              </div>
-            </div>
-
-            <div className="bg-[#141416] border border-obsidian-border rounded-lg p-3">
-              <div className="flex items-center justify-between text-obsidian-muted text-xs">
-                <span>Sources</span>
-                <Globe className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div className="text-xl font-bold text-obsidian-text mt-1">
-                {projectData.sources.length}
-              </div>
-            </div>
-
-            <div className="bg-[#141416] border border-obsidian-border rounded-lg p-3">
-              <div className="flex items-center justify-between text-obsidian-muted text-xs">
-                <span>Notes</span>
-                <FileText className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="text-xl font-bold text-obsidian-text mt-1">
-                {projectData.notes.length}
-              </div>
-            </div>
-          </div>
-        </div>
+    <div
+      className="h-full flex flex-col bg-[var(--t-bg)]"
+      onKeyDown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+          e.preventDefault();
+          if (isDirty) handleSave();
+        }
+      }}
+    >
+      {/* Toolbar */}
+      <div className="h-[32px] shrink-0 flex items-center gap-1 px-2 border-b border-[var(--t-border)] bg-[var(--t-panel)]">
+        <span className="t-label mr-1">Case brief</span>
+        <span className="font-mono text-[10.5px] text-zinc-600 truncate">{draft.id}</span>
+        <div className="flex-1" />
+        <button type="button" onClick={onOpenGraph} className="t-btn">
+          <Network className="w-3 h-3" />
+          Graph
+        </button>
+        <button type="button" onClick={onCreateEntity} className="t-btn">
+          <Plus className="w-3 h-3" />
+          Entity
+        </button>
+        <button type="button" onClick={onCreateRelationship} className="t-btn">
+          <Link2 className="w-3 h-3" />
+          Relationship
+        </button>
+        <div className="w-px h-4 bg-[var(--t-border)] mx-1" />
+        {onOpenInExplorer && (
+          <button type="button" onClick={onOpenInExplorer} className="t-icon-btn" title="Reveal case folder">
+            <FolderOpen />
+          </button>
+        )}
+        <button type="button" onClick={onExportZip} className="t-icon-btn" title="Export case archive (.zip)">
+          <Download />
+        </button>
+        <button type="button" onClick={onRebuildIndex} className="t-icon-btn" title="Rebuild full-text index">
+          <RefreshCw />
+        </button>
+        <div className="w-px h-4 bg-[var(--t-border)] mx-1" />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!isDirty}
+          className={`t-btn ${isDirty ? 't-btn-primary' : ''}`}
+          title="Save project.md  (⌘S)"
+        >
+          <Save className="w-3 h-3" />
+          {isDirty ? 'Save' : 'Saved'}
+        </button>
       </div>
 
-      {/* Main Body */}
-      <div className="p-8 max-w-5xl w-full mx-auto space-y-6">
-        {/* Breakdown Panels */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Entity Type Distribution */}
-          <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-4 space-y-3 shadow-subtle">
-            <div className="flex items-center justify-between border-b border-obsidian-border pb-2">
-              <span className="text-xs font-semibold text-obsidian-text uppercase tracking-wider">
-                Entity Type Breakdown
-              </span>
-              <button
-                type="button"
-                onClick={onCreateEntity}
-                className="text-xs text-obsidian-accent hover:underline flex items-center space-x-1"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Entity</span>
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {entityTypeCounts.map((t) => (
-                <div
-                  key={t.type}
-                  className="flex items-center justify-between p-2 rounded bg-[#141416] border border-obsidian-borderSubtle"
-                >
-                  <div className="flex items-center space-x-2 truncate">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
-                    <span className="text-xs text-obsidian-muted truncate">{t.label}</span>
-                  </div>
-                  <span className="text-xs font-mono font-bold text-obsidian-text">{t.count}</span>
-                </div>
-              ))}
+      <div className="flex-1 min-h-0 flex">
+        {/* Working document */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-y-auto">
+          <div className="px-6 pt-4 pb-2 max-w-[920px] w-full">
+            <input
+              value={draft.name}
+              onChange={(e) => updateDraft({ name: e.target.value })}
+              className="w-full bg-transparent text-[17px] font-semibold text-zinc-50 outline-none border-b border-transparent focus:border-[var(--t-border)] pb-0.5"
+              aria-label="Investigation name"
+            />
+            <div className="mt-1 text-[11px] text-zinc-500 font-mono">
+              project.md · created {fmt(draft.created_at)} · updated {fmt(draft.updated_at)}
             </div>
           </div>
-
-          {/* Relationship Status Breakdown */}
-          <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-4 space-y-3 shadow-subtle">
-            <div className="flex items-center justify-between border-b border-obsidian-border pb-2">
-              <span className="text-xs font-semibold text-obsidian-text uppercase tracking-wider">
-                Relationship Verification Status
-              </span>
-              <button
-                type="button"
-                onClick={onCreateRelationship}
-                className="text-xs text-obsidian-accent hover:underline flex items-center space-x-1"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Relationship</span>
-              </button>
-            </div>
-            <div className="flex flex-col space-y-1.5">
-              {statusCounts.map((s) => (
-                <div
-                  key={s.status}
-                  className="flex items-center justify-between p-1.5 px-2.5 rounded bg-[#141416] border border-obsidian-borderSubtle"
-                >
-                  <StatusBadge status={s.status} size="sm" />
-                  <span className="text-xs font-mono font-bold text-obsidian-text">
-                    {s.count} claims
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div className="px-6 pb-6 max-w-[920px] w-full flex-1">
+            <MarkdownEditor
+              value={draft.markdownBody}
+              onChange={(val) => updateDraft({ markdownBody: val })}
+              placeholder="Objective, scope, leads, open questions…"
+              minHeight="420px"
+              onWikilinkClick={(target) => {
+                const ent = projectData.entities.find((e) => e.id === target || e.name === target);
+                if (ent) onOpenEntity(ent.id);
+              }}
+            />
           </div>
         </div>
 
-        {/* Project Markdown Objective & Scope */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-3 shadow-subtle">
-          <div className="flex items-center justify-between border-b border-obsidian-border pb-2">
-            <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">
-                Project Documentation & Scope (project.md)
-              </h2>
-              <p className="text-xs text-obsidian-dim">
-                Investigation objectives, leads, and operational notes
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!isDirty}
-              className={`px-3 py-1 flex items-center space-x-1.5 text-xs rounded font-medium transition-colors ${
-                isDirty
-                  ? 'bg-obsidian-accent hover:bg-obsidian-accentHover text-white'
-                  : 'bg-obsidian-hover text-obsidian-dim cursor-not-allowed border border-obsidian-border'
-              }`}
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save Document</span>
-            </button>
+        {/* Case facts */}
+        <aside className="w-[300px] max-[1300px]:w-[260px] shrink-0 border-l border-[var(--t-border)] bg-[var(--t-panel)] overflow-y-auto text-[12px]">
+          <TableHead title="Case" />
+          <dl className="t-kv px-3 py-1.5">
+            <dt>Entities</dt>
+            <dd className="font-mono tabular-nums">{total}</dd>
+            <dt>Relationships</dt>
+            <dd className="font-mono tabular-nums">{relTotal}</dd>
+            <dt>Sources</dt>
+            <dd className="font-mono tabular-nums">{projectData.sources.length}</dd>
+            <dt>Notes</dt>
+            <dd className="font-mono tabular-nums">{projectData.notes.length}</dd>
+            <dt>Unsourced links</dt>
+            <dd className={`font-mono tabular-nums ${unsourced > 0 ? 'text-amber-400' : ''}`}>{unsourced}</dd>
+          </dl>
+
+          <TableHead title="Composition" />
+          <div className="py-1">
+            {entityTypeCounts.length === 0 && <div className="px-3 py-1 text-zinc-600">No entities.</div>}
+            {entityTypeCounts.map((t) => (
+              <div key={t.type} className="flex items-center gap-2 px-3 h-[20px]">
+                <span className="t-swatch" style={{ background: t.color }} />
+                <span className="flex-1 truncate text-zinc-300">{t.label}</span>
+                <span className="font-mono text-[10.5px] text-zinc-600 tabular-nums w-10 text-right">
+                  {total ? Math.round((t.count / total) * 100) : 0}%
+                </span>
+                <span className="font-mono text-[11px] text-zinc-400 tabular-nums w-8 text-right">{t.count}</span>
+              </div>
+            ))}
           </div>
 
-          <MarkdownEditor
-            value={draft.markdownBody}
-            onChange={(val) => updateDraft({ markdownBody: val })}
-            onWikilinkClick={(target) => {
-              const ent = projectData.entities.find((e) => e.id === target || e.name === target);
-              if (ent) onOpenEntity(ent.id);
-            }}
-          />
-        </div>
+          <TableHead title="Verification" />
+          <div className="py-1">
+            {statusCounts.map((s) => (
+              <div key={s.status} className="flex items-center gap-2 px-3 h-[20px]">
+                <StatusGlyph status={s.status} width={16} />
+                <span className="flex-1 text-zinc-300">{s.label}</span>
+                <span className="font-mono text-[11px] text-zinc-400 tabular-nums w-8 text-right">{s.count}</span>
+              </div>
+            ))}
+          </div>
+
+          <TableHead title="Most connected" />
+          <div className="py-0.5">
+            {topEntities.length === 0 && <div className="px-3 py-1 text-zinc-600">No relationships yet.</div>}
+            {topEntities.map(({ e, d }) => (
+              <div key={e.id} className="t-row !pl-3" onClick={() => onOpenEntity(e.id)} title={e.name}>
+                <span className="t-swatch !w-[7px] !h-[7px]" style={{ background: getEntityTypeColor(e.type) }} />
+                <span className="flex-1 truncate">{e.name}</span>
+                <span className="font-mono text-[10.5px] text-zinc-500 tabular-nums">{d}</span>
+              </div>
+            ))}
+          </div>
+        </aside>
       </div>
     </div>
   );

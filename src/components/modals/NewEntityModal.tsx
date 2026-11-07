@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useEscapeKey } from '@/components/common/Dialog';
 import { Entity, EntityType, ENTITY_TYPES } from '@/types';
 import { EntityIcon, getEntityTypeColor } from '@/components/common/EntityIcon';
 import { X, Plus, Upload, Image as ImageIcon } from 'lucide-react';
@@ -26,6 +27,7 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
   const [showPhotoUrlInput, setShowPhotoUrlInput] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEscapeKey(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,10 +84,10 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
   const activePhoto = photoDataUrl || photoUrl.trim();
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-      <div className="bg-[#18181c] border border-obsidian-border rounded-xl max-w-md w-full shadow-2xl overflow-hidden text-xs animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-[70] bg-black/65 flex items-center justify-center p-4">
+      <div className="bg-[var(--t-panel)] border border-[#2e2f34] rounded-[4px] max-w-md w-full shadow-popover overflow-hidden text-[12px] animate-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidian-border bg-[#151518]">
+        <div className="h-[32px] flex items-center justify-between pl-3 pr-1.5 border-b border-[var(--t-border)]">
           <div className="flex items-center space-x-2 font-semibold text-obsidian-text">
             <Plus className="w-4 h-4 text-obsidian-accent" />
             <span>Create New Investigation Entity</span>
@@ -93,7 +95,7 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-obsidian-dim hover:text-white p-1 rounded-lg transition-colors"
+            className="t-icon-btn-lg transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -102,10 +104,10 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1.5">
+            <label className="block text-[11px] text-zinc-500 mb-1.5">
               Entity Type *
             </label>
-            <div className="grid grid-cols-3 gap-1.5 max-h-32 overflow-y-auto p-1 bg-[#141416] border border-obsidian-border rounded-lg">
+            <div className="grid grid-cols-3 gap-1.5 max-h-32 overflow-y-auto p-1 bg-[var(--t-panel)] border border-obsidian-border rounded-lg">
               {ENTITY_TYPES.map((t) => (
                 <button
                   key={t.type}
@@ -126,7 +128,7 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
 
           {type === 'custom' && (
             <div>
-              <label className="block font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Custom Type Label *
               </label>
               <input
@@ -134,14 +136,14 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
                 value={customType}
                 onChange={(e) => setCustomType(e.target.value)}
                 placeholder="e.g. Cryptocurrency Wallet, Vehicle, Weapon..."
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="w-full px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
                 required
               />
             </div>
           )}
 
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Display Name *
             </label>
             <input
@@ -150,14 +152,14 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. John Doe, nightmarket-vault.cc, 185.220.101.45..."
-              className="w-full px-3 py-2 bg-[#141416] border border-obsidian-border rounded-lg text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+              className="t-input"
               required
             />
           </div>
 
           {/* Photo / Avatar Uploader */}
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Entity Photo / Avatar (Optional)
             </label>
             <div className="flex items-center gap-2">
@@ -188,18 +190,18 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="px-2.5 py-1.5 bg-[#141416] hover:bg-[#202028] text-zinc-300 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
+                className="px-2.5 py-1.5 bg-[var(--t-panel)] hover:bg-[var(--t-hover)] text-zinc-300 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
               >
-                <Upload className="w-3 h-3 text-purple-400" />
+                <Upload className="w-3 h-3 opacity-70" />
                 <span>Upload</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowPhotoUrlInput(!showPhotoUrlInput)}
-                className="px-2.5 py-1.5 bg-[#141416] hover:bg-[#202028] text-zinc-300 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
+                className="px-2.5 py-1.5 bg-[var(--t-panel)] hover:bg-[var(--t-hover)] text-zinc-300 border border-obsidian-border rounded-lg flex items-center space-x-1.5 transition-colors"
               >
-                <ImageIcon className="w-3 h-3 text-sky-400" />
+                <ImageIcon className="w-3 h-3 opacity-70" />
                 <span>URL</span>
               </button>
             </div>
@@ -211,14 +213,14 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
                   placeholder="Paste image link (https://...)..."
                   value={photoUrl}
                   onChange={(e) => setPhotoUrl(e.target.value)}
-                  className="flex-1 px-2.5 py-1 bg-[#101014] border border-obsidian-border rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-purple-500"
+                  className="flex-1 px-2.5 py-1 bg-[var(--t-bg)] border border-obsidian-border rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-[var(--t-accent)]"
                 />
               </div>
             )}
           </div>
 
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Aliases (comma separated)
             </label>
             <input
@@ -226,12 +228,12 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
               value={aliasesStr}
               onChange={(e) => setAliasesStr(e.target.value)}
               placeholder="e.g. handle_99, moroz_dev, alternative_name"
-              className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+              className="w-full px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
             />
           </div>
 
           <div>
-            <label className="block font-medium text-obsidian-muted mb-1">
+            <label className="block text-[11px] text-zinc-500 mb-1">
               Tags (comma separated)
             </label>
             <input
@@ -239,7 +241,7 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
               value={tagsStr}
               onChange={(e) => setTagsStr(e.target.value)}
               placeholder="e.g. priority, suspect, unverified"
-              className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+              className="w-full px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
             />
           </div>
 
@@ -247,14 +249,14 @@ export const NewEntityModal: React.FC<NewEntityModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 bg-obsidian-hover hover:bg-[#2b2b35] text-obsidian-text rounded-lg transition-colors"
+              className="t-btn"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
-              className="px-4 py-1.5 bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded-lg font-medium disabled:opacity-50 transition-colors shadow-sm"
+              className="t-btn t-btn-primary shadow-sm"
             >
               Create Entity
             </button>

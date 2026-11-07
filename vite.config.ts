@@ -17,7 +17,8 @@ export default defineConfig({
   base: './',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __BUILD_HASH__: JSON.stringify(buildHash),
+    // Build hash identifies Electron app builds only; the web build has none.
+    __BUILD_HASH__: JSON.stringify(isElectron ? buildHash : ''),
   },
   plugins: [
     react(),

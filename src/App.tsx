@@ -20,6 +20,7 @@ import { getStorageService } from '@/services/storage';
 import { LeftSidebar } from '@/components/layout/LeftSidebar';
 import { RightSidebar } from '@/components/layout/RightSidebar';
 import { TabBar } from '@/components/layout/TabBar';
+import { StatusBar } from '@/components/layout/StatusBar';
 import { GraphView } from '@/features/graph/GraphView';
 import { EntityEditor } from '@/features/entities/EntityEditor';
 import { RelationshipEditor } from '@/features/relationships/RelationshipEditor';
@@ -35,17 +36,18 @@ import { CommandPaletteModal } from '@/components/modals/CommandPaletteModal';
 import { ShortcutsModal } from '@/components/modals/ShortcutsModal';
 import { SettingsModal } from '@/components/modals/SettingsModal';
 import { createSampleProject } from '@/services/storage/sampleData';
+import { getTransformById } from '@/services/transforms/registry';
 import {
   SidebarClose,
   SidebarOpen,
   PanelRightClose,
   PanelRightOpen,
   Folder,
-  FolderKanban,
   FolderOpen,
   ChevronDown,
   Plus,
   Check,
+  Search as SearchIcon,
 } from 'lucide-react';
 import saveAs from 'file-saver';
 
@@ -99,18 +101,30 @@ export function App() {
     }
   }, []);
 
+  const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
   const isMac = platform === 'darwin';
   const isWin = platform === 'win32';
 
   // Sidebar Widths State (persisted in localStorage)
   const [leftSidebarWidth, setLeftSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem('trace_sidebar_left_width');
-    return saved ? Math.max(220, Math.min(600, parseInt(saved, 10))) : 280;
+    return saved ? Math.max(220, Math.min(600, parseInt(saved, 10))) : 270;
   });
   const [rightSidebarWidth, setRightSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem('trace_sidebar_right_width');
-    return saved ? Math.max(240, Math.min(650, parseInt(saved, 10))) : 320;
+    return saved ? Math.max(240, Math.min(650, parseInt(saved, 10))) : 300;
   });
+
+  // Keep the central workspace usable on smaller displays (1280px and up):
+  // side panels never take more than ~22–24% of the window each.
+  const [viewportWidth, setViewportWidth] = useState<number>(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const effectiveLeftWidth = Math.min(leftSidebarWidth, Math.max(230, Math.round(viewportWidth * 0.22)));
+  const effectiveRightWidth = Math.min(rightSidebarWidth, Math.max(250, Math.round(viewportWidth * 0.24)));
 
   const handleLeftResize = (newWidth: number) => {
     const clamped = Math.max(220, Math.min(600, newWidth));
@@ -372,6 +386,247 @@ export function App() {
       };
     });
     showToast(`Confirmed relationship: ${rel.type}`);
+  };
+
+  // Maltego Transform State & Execution
+  const [activeRunningTransformId, setActiveRunningTransformId] = useState<string | undefined>(undefined);
+
+  const handleBatchAddEntitiesAndRelationships = async (
+    newEntities: Array<{
+      id?: string;
+      name: string;
+      type: EntityType;
+      attributes?: Record<string, any>;
+      tags?: string[];
+      position?: { x: number; y: number };
+    }>,
+    newRels: Array<{
+      source_entity: string;
+      target_entity: string;
+      type: string;
+      status?: RelationshipStatus;
+      confidence?: number;
+      evidence?: string[];
+    }>,
+    newPositions?: Record<string, { x: number; y: number }>
+  ) => {
+    if (!activeProjectId || !projectData) return;
+
+    // Track entity names to IDs for connecting relationships
+    const entityNameToId = new Map<string, string>();
+    projectData.entities.forEach((e) => {
+      entityNameToId.set(e.name.toLowerCase().trim(), e.id);
+      entityNameToId.set(e.id, e.id);
+    });
+
+    const savedEntities: Entity[] = [];
+    const updatedPositions: Record<string, { x: number; y: number }> = {
+      ...(graphPositions || {}),
+    };
+
+    for (let i = 0; i < newEntities.length; i++) {
+      const item = newEntities[i];
+      const normalizedName = item.name.toLowerCase().trim();
+      const existingId = entityNameToId.get(normalizedName);
+
+      if (existingId) {
+        // Map alias to existing ID so relationships connect properly
+        if (item.id) entityNameToId.set(item.id, existingId);
+        continue;
+      }
+
+      const entityId =
+        item.id || `ent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      entityNameToId.set(normalizedName, entityId);
+      if (item.id) entityNameToId.set(item.id, entityId);
+
+      const now = new Date().toISOString();
+      const entity: Entity = {
+        id: entityId,
+        name: item.name,
+        type: item.type,
+        aliases: [],
+        tags: item.tags || [item.type],
+        attributes: item.attributes || {},
+        created_at: now,
+        updated_at: now,
+        markdownBody: `### Discovered Entity: ${item.name}\n\n- **Type:** ${item.type}\n- **Discovered:** ${new Date().toLocaleString()}\n`,
+      };
+
+      await storage.saveEntity(activeProjectId, entity);
+      savedEntities.push(entity);
+
+      if (item.position) {
+        updatedPositions[entityId] = item.position;
+      }
+    }
+
+    if (newPositions) {
+      Object.assign(updatedPositions, newPositions);
+    }
+
+    // Save relationships
+    const savedRels: Relationship[] = [];
+    for (let i = 0; i < newRels.length; i++) {
+      const relItem = newRels[i];
+      const srcId =
+        entityNameToId.get(relItem.source_entity.toLowerCase().trim()) || relItem.source_entity;
+      const tgtId =
+        entityNameToId.get(relItem.target_entity.toLowerCase().trim()) || relItem.target_entity;
+
+      if (!srcId || !tgtId || srcId === tgtId) continue;
+
+      // Avoid creating duplicates
+      const exists = [...projectData.relationships, ...savedRels].some(
+        (r) =>
+          ((r.source_entity === srcId && r.target_entity === tgtId) ||
+            (!r.directed && r.source_entity === tgtId && r.target_entity === srcId)) &&
+          r.type === relItem.type
+      );
+      if (exists) continue;
+
+      const relId = `rel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const rel: Relationship = {
+        id: relId,
+        type: relItem.type,
+        source_entity: srcId,
+        target_entity: tgtId,
+        directed: true,
+        status: relItem.status || 'unverified',
+        confidence: relItem.confidence ?? 0.85,
+        evidence: relItem.evidence || ['OSINT Transform Discovery'],
+        created_at: new Date().toISOString(),
+        markdownBody: `### Discovered Relationship\n\n- **Type:** ${relItem.type}\n- **Evidence:** ${(relItem.evidence || []).join(', ')}\n`,
+      };
+
+      await storage.saveRelationship(activeProjectId, rel);
+      savedRels.push(rel);
+    }
+
+    // Persist layout positions
+    if (Object.keys(updatedPositions).length > 0) {
+      await storage.saveGraphLayout(activeProjectId, { positions: updatedPositions });
+      setGraphPositions(updatedPositions);
+    }
+
+    // Update in-memory state
+    setProjectData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        entities: [...prev.entities, ...savedEntities],
+        relationships: [...prev.relationships, ...savedRels],
+      };
+    });
+
+    if (savedEntities.length > 0 || savedRels.length > 0) {
+      showToast(
+        `Added ${savedEntities.length} new ${savedEntities.length === 1 ? 'entity' : 'entities'} and ${savedRels.length} relationship${savedRels.length === 1 ? '' : 's'}`
+      );
+    }
+  };
+
+  const handleCreateEntityAtPosition = async (
+    type: EntityType,
+    pos: { x: number; y: number },
+    name?: string
+  ) => {
+    if (!activeProjectId) return;
+    const defaultName = name && name.trim().length > 0 ? name.trim() : `New ${type}`;
+    const entityId = `ent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const now = new Date().toISOString();
+    const entity: Entity = {
+      id: entityId,
+      name: defaultName,
+      type: type,
+      aliases: [],
+      tags: [type],
+      attributes: {},
+      created_at: now,
+      updated_at: now,
+      markdownBody: `### ${defaultName}\n\nCreated manually on ${new Date().toLocaleString()}\n`,
+    };
+
+    await storage.saveEntity(activeProjectId, entity);
+    const updatedPositions = {
+      ...graphPositions,
+      [entityId]: pos,
+    };
+    await storage.saveGraphLayout(activeProjectId, { positions: updatedPositions });
+    setGraphPositions(updatedPositions);
+
+    setProjectData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        entities: [...prev.entities, entity],
+      };
+    });
+
+    setSelectedEntityId(entityId);
+    showToast(`Created ${type} "${defaultName}"`);
+  };
+
+  const handleRunTransformFromSidebar = async (entity: Entity, transformId: string) => {
+    if (!activeProjectId || !projectData) return;
+    const transform = getTransformById(transformId);
+    if (!transform) {
+      showToast(`Transform "${transformId}" not found`);
+      return;
+    }
+
+    setActiveRunningTransformId(transformId);
+    showToast(`Executing "${transform.name}" on ${entity.name}...`);
+
+    try {
+      const logs: string[] = [];
+      const result = await transform.run(entity, {
+        allEntities: projectData.entities,
+        signal: new AbortController().signal,
+        log: (msg) => logs.push(msg),
+      });
+
+      const parentPos = graphPositions[entity.id] || { x: 400, y: 300 };
+      const newPositions: Record<string, { x: number; y: number }> = {};
+
+      const newEntities = result.newEntities.map((ent, idx) => {
+        const total = result.newEntities.length || 1;
+        const angle = (idx / total) * 2 * Math.PI + 0.2;
+        const radius = 140 + (idx % 2) * 50;
+        const pos = {
+          x: Math.round(parentPos.x + Math.cos(angle) * radius),
+          y: Math.round(parentPos.y + Math.sin(angle) * radius),
+        };
+        const entId = `ent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        newPositions[entId] = pos;
+        return {
+          id: entId,
+          name: ent.name,
+          type: ent.type,
+          attributes: ent.attributes,
+          tags: ent.tags,
+          position: pos,
+        };
+      });
+
+      const newRels = result.newRelationships.map((r) => ({
+        source_entity: entity.id,
+        target_entity: r.targetEntityName,
+        type: r.type,
+        status: r.status || 'confirmed',
+        confidence: r.confidence ?? 1.0,
+        evidence: r.evidence || [`Discovered via ${transform.name}`],
+      }));
+
+      await handleBatchAddEntitiesAndRelationships(newEntities, newRels, newPositions);
+      showToast(`Completed ${transform.name}: found ${result.newEntities.length} entities`);
+    } catch (err: any) {
+      console.error(`Transform ${transformId} failed:`, err);
+      showToast(`Error running ${transform.name}: ${err?.message || 'Failed'}`);
+    } finally {
+      setActiveRunningTransformId(undefined);
+    }
   };
 
   const [projectModalOpen, setProjectModalOpen] = useState<boolean>(false);
@@ -727,12 +982,11 @@ export function App() {
   };
 
   const closeTab = (tabId: string) => {
-    if (tabs.length <= 1) return;
     const nextTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(nextTabs);
 
     if (activeTabId === tabId) {
-      setActiveTabId(nextTabs[nextTabs.length - 1].id);
+      setActiveTabId(nextTabs.length ? nextTabs[nextTabs.length - 1].id : '');
     }
   };
 
@@ -995,50 +1249,32 @@ export function App() {
   };
 
   const currentProject = projects.find((p) => p.id === activeProjectId);
-  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const activeTab: Tab | undefined = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-obsidian-bg text-obsidian-text font-sans relative">
       {/* App Startup Loading Screen */}
       {initialLoading && (
         <div
-          className="fixed inset-0 z-50 bg-[#121214] flex flex-col items-center justify-center select-none transition-opacity duration-300"
+          className="fixed inset-0 z-[100] bg-[var(--t-bg)] flex flex-col items-center justify-center select-none"
           style={{ WebkitAppRegion: 'drag' as any }}
         >
-          {/* macOS Traffic Lights Spacer */}
-          {isMac && !isFullScreen && <div className="absolute top-3 left-4 w-[74px] h-4 pointer-events-none" />}
-
-          <div className="flex flex-col items-center w-full max-w-md px-8 text-center">
-            <div className="text-sm font-semibold tracking-wide text-zinc-200 mb-4 flex items-center gap-2">
-              <span>Loading Trace</span>
+          <div className="w-64 flex flex-col gap-2">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] font-semibold tracking-[0.08em] text-zinc-200">TRACE</span>
+              <span className="text-[10px] font-mono text-zinc-500">{__APP_VERSION__}</span>
             </div>
-
-            {/* Long Progress Bar Container */}
-            <div className="w-full h-1.5 bg-zinc-800/80 rounded-full overflow-hidden p-0.5 border border-white/5">
+            <div className="h-px w-full bg-zinc-800 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 via-indigo-400 to-sky-400 rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+                className="h-full bg-[var(--t-accent)] transition-[width] duration-200 ease-out"
                 style={{ width: `${Math.min(100, Math.max(8, loadingProgress))}%` }}
               />
             </div>
-          </div>
-
-          {/* Version & SHA256 Build Info on Loading Screen */}
-          <div className="absolute bottom-6 flex flex-col items-center text-center space-y-1 select-text">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-xs font-semibold text-zinc-400">Trace</span>
-              <span className="text-[10px] font-mono text-zinc-500">
-                {__APP_VERSION__}
-              </span>
-            </div>
-            <div className="text-[10px] text-zinc-500 font-mono flex items-center space-x-1 max-w-xs sm:max-w-md truncate">
-              <span className="shrink-0">sha256:</span>
-              <span
-                className="text-zinc-400 select-all font-mono truncate"
-                title={typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'dev-local'}
-              >
-                {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'dev-local'}
-              </span>
-            </div>
+            {__BUILD_HASH__ && (
+              <div className="text-[10px] font-mono text-zinc-600 truncate select-text" title={__BUILD_HASH__}>
+                sha256 {__BUILD_HASH__}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1052,172 +1288,152 @@ export function App() {
         className="hidden"
       />
 
-      {/* Unified Top Header Bar (Obsidian-Style) */}
+      {/* Title bar: window chrome, investigation context, document tabs */}
       <header
-        className="h-9.5 bg-[#121215] border-b border-obsidian-border flex items-center px-2 select-none shrink-0 z-30"
+        className="h-[30px] bg-[var(--t-panel)] border-b border-[var(--t-border)] flex items-stretch select-none shrink-0 relative z-[60]"
         style={{ WebkitAppRegion: 'drag' as any }}
       >
-        {/* macOS Traffic Lights Spacer - Only shown on macOS in non-fullscreen window */}
-        {isMac && !isFullScreen && <div className="w-[74px] shrink-0 pointer-events-none" />}
+        {isElectron && isMac && !isFullScreen && <div className="w-[76px] shrink-0 pointer-events-none" />}
 
-        {/* Left Sidebar Toggle Button */}
-        <button
-          type="button"
-          onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+        <div className="flex items-center px-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' as any }}>
+          <button
+            type="button"
+            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+            className="t-icon-btn"
+            data-active={leftSidebarOpen}
+            title={`${leftSidebarOpen ? 'Hide' : 'Show'} explorer  (⌘[)`}
+          >
+            {leftSidebarOpen ? <SidebarClose /> : <SidebarOpen />}
+          </button>
+        </div>
+
+        {/* Investigation switcher */}
+        <div
+          ref={projectSelectorRef}
+          className="relative flex items-stretch shrink-0 border-r border-[var(--t-border)]"
           style={{ WebkitAppRegion: 'no-drag' as any }}
-          className="p-1.5 rounded-lg transition-colors mr-1 shrink-0 text-zinc-400 hover:text-zinc-100 hover:bg-white/10 active:bg-white/15"
-          title={leftSidebarOpen ? 'Collapse Left Sidebar (Ctrl/Cmd + [)' : 'Expand Left Sidebar (Ctrl/Cmd + [)'}
         >
-          {leftSidebarOpen ? <SidebarClose className="w-4 h-4" /> : <SidebarOpen className="w-4 h-4" />}
-        </button>
-
-        {/* Project Switcher Dropdown Button */}
-        <div ref={projectSelectorRef} className="relative shrink-0" style={{ WebkitAppRegion: 'no-drag' as any }}>
           <button
             type="button"
             onClick={() => setProjectSelectorOpen(!projectSelectorOpen)}
-            className="h-7 px-2.5 bg-[#18181f] hover:bg-[#22222b] border border-obsidian-border hover:border-indigo-500/40 rounded-lg flex items-center space-x-2 text-left transition-colors max-w-[280px] group shadow-xs"
+            className={`flex items-center gap-1.5 px-2.5 max-w-[260px] text-[12px] hover:bg-[var(--t-hover)] ${
+              projectSelectorOpen ? 'bg-[var(--t-hover)]' : ''
+            }`}
             title={currentProject?.name}
           >
-            <FolderKanban className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-            <span className="text-xs font-medium text-white truncate">
-              {currentProject ? currentProject.name : 'Select Project'}
+            <span className="t-label !text-[9.5px] shrink-0">Case</span>
+            <span className="font-medium text-zinc-100 truncate">
+              {currentProject ? currentProject.name : 'Select investigation'}
             </span>
-            <ChevronDown
-              className={`w-3 h-3 text-obsidian-dim group-hover:text-white shrink-0 transition-transform duration-150 ${
-                projectSelectorOpen ? 'rotate-180 text-indigo-400' : ''
-              }`}
-            />
+            <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
           </button>
 
-          {/* Project Switcher Dropdown */}
           {projectSelectorOpen && (
-            <div
-              className="absolute top-full left-0 mt-1.5 w-72 z-50 bg-[#16161d] border border-obsidian-border rounded-xl shadow-2xl p-1.5 space-y-1 ring-1 ring-white/10 animate-in fade-in zoom-in-95 duration-100"
-            >
-              <div className="flex items-center justify-between px-2 pt-1 pb-1">
-                <span className="text-[10px] font-semibold text-obsidian-muted uppercase tracking-wider">
-                  Projects
-                </span>
-                <span className="text-[10px] text-obsidian-dim font-mono">{projects.length}</span>
+            <div className="t-menu absolute top-full left-0 mt-px w-80 z-50">
+              <div className="px-2.5 pt-1 pb-1.5 flex items-center justify-between">
+                <span className="t-label">Investigations</span>
+                <span className="text-[10px] text-zinc-500 font-mono">{projects.length}</span>
               </div>
-
-              <div className="max-h-56 overflow-y-auto space-y-0.5">
+              <div className="max-h-64 overflow-y-auto">
                 {projects.map((p) => {
                   const isActive = p.id === activeProjectId;
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={p.id}
                       onClick={() => {
                         handleSelectProject(p.id);
                         setProjectSelectorOpen(false);
                       }}
-                      className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer transition-colors ${
-                        isActive
-                          ? 'bg-indigo-600/20 text-white font-medium border border-indigo-500/30'
-                          : 'hover:bg-white/5 text-zinc-300 border border-transparent'
-                      }`}
+                      className="t-menu-item"
                     >
-                      <div className="flex items-center space-x-2 min-w-0 flex-1 mr-2">
-                        <FolderKanban
-                          className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-400' : 'text-zinc-500'}`}
-                        />
-                        <span className="truncate text-xs">{p.name}</span>
-                      </div>
-                      <div className="flex items-center space-x-1.5 shrink-0">
-                        <span className="text-[10px] font-mono text-zinc-500">{p.entityCount} ent</span>
-                        {isActive && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                      </div>
-                    </div>
+                      <span className="w-3 shrink-0">{isActive && <Check />}</span>
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="text-[10px] font-mono opacity-60 shrink-0">{p.entityCount}</span>
+                    </button>
                   );
                 })}
               </div>
-
-              <div className="border-t border-obsidian-border pt-1 mt-1 space-y-0.5">
-                {storage.isDesktop() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProjectSelectorOpen(false);
-                      handleChangeWorkingFolder();
-                    }}
-                    className="w-full px-2.5 py-1.5 text-left text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg flex items-center space-x-2 text-xs transition-colors"
-                  >
-                    <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Choose Working Folder...</span>
-                  </button>
-                )}
-
+              <div className="t-menu-sep" />
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectSelectorOpen(false);
+                  setProjectModalOpen(true);
+                }}
+                className="t-menu-item"
+              >
+                <Plus />
+                <span>New investigation…</span>
+              </button>
+              {storage.isDesktop() && (
                 <button
                   type="button"
                   onClick={() => {
                     setProjectSelectorOpen(false);
-                    handleOpenInExplorer(activeProjectId);
+                    handleChangeWorkingFolder();
                   }}
-                  className="w-full px-2.5 py-1.5 text-left text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg flex items-center space-x-2 text-xs transition-colors"
+                  className="t-menu-item"
                 >
-                  <FolderOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span>Show in Finder</span>
+                  <Folder />
+                  <span>Choose working folder…</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProjectSelectorOpen(false);
-                    setProjectModalOpen(true);
-                  }}
-                  className="w-full px-2.5 py-1.5 text-left text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg flex items-center space-x-2 text-xs transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                  <span>New Project...</span>
-                </button>
-              </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectSelectorOpen(false);
+                  handleOpenInExplorer(activeProjectId);
+                }}
+                className="t-menu-item"
+              >
+                <FolderOpen />
+                <span>{storage.isDesktop() ? 'Reveal in Finder' : 'Download project files'}</span>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Quick "Show in Finder" Button */}
-        <button
-          type="button"
-          onClick={() => handleOpenInExplorer()}
-          style={{ WebkitAppRegion: 'no-drag' as any }}
-          className="p-1.5 text-obsidian-dim hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-colors ml-1 shrink-0"
-          title="Show in Finder"
-        >
-          <FolderOpen className="w-4 h-4" />
-        </button>
+        {/* Document tabs */}
+        <div className="flex-1 min-w-0 flex items-stretch">
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onSelectTab={setActiveTabId}
+            onCloseTab={closeTab}
+            onNewTab={() => openTab('graph', undefined, 'Interactive Graph', { isPinned: true })}
+            onTogglePinTab={togglePinTab}
+            onCloseOtherTabs={closeOtherTabs}
+            onCloseTabsToRight={closeTabsToRight}
+            onReorderTabs={setTabs}
+          />
+        </div>
 
-        {/* Vertical Divider */}
-        <div className="h-4 w-[1px] bg-obsidian-border mx-2 shrink-0 pointer-events-none" />
-
-        {/* Tab Bar in Top Header */}
-        <TabBar
-          tabs={tabs}
-          activeTabId={activeTabId}
-          onSelectTab={setActiveTabId}
-          onCloseTab={closeTab}
-          onNewTab={() => openTab('graph', undefined, 'Interactive Graph', { isPinned: true })}
-          onTogglePinTab={togglePinTab}
-          onCloseOtherTabs={closeOtherTabs}
-          onCloseTabsToRight={closeTabsToRight}
-          onReorderTabs={setTabs}
-        />
-
-        {/* Right Sidebar Inspector Toggle */}
-        {projectData && (
+        <div className="flex items-center gap-0.5 px-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' as any }}>
           <button
             type="button"
-            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-            style={{ WebkitAppRegion: 'no-drag' as any }}
-            className="p-1.5 rounded-lg transition-colors ml-1 shrink-0 text-zinc-400 hover:text-zinc-100 hover:bg-white/10 active:bg-white/15"
-            title={rightSidebarOpen ? 'Collapse Inspector (Ctrl/Cmd + ])' : 'Expand Inspector (Ctrl/Cmd + ])'}
+            onClick={() => setCommandPaletteOpen(true)}
+            className="h-[22px] flex items-center gap-2 pl-2 pr-1 mr-1 text-[11.5px] text-zinc-500 bg-[var(--t-bg)] border border-[var(--t-border)] rounded-[3px] hover:text-zinc-300 hover:border-zinc-700 w-64 max-[1100px]:w-44"
+            title="Command palette"
           >
-            {rightSidebarOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+            <SearchIcon className="w-3 h-3 shrink-0" />
+            <span className="flex-1 text-left truncate">Go to anything…</span>
+            <span className="t-kbd">⌘K</span>
           </button>
-        )}
+          {projectData && (
+            <button
+              type="button"
+              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+              className="t-icon-btn"
+              data-active={rightSidebarOpen}
+              title={`${rightSidebarOpen ? 'Hide' : 'Show'} inspector  (⌘])`}
+            >
+              {rightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
+            </button>
+          )}
+        </div>
 
-        {/* Windows Titlebar Controls Safe Space (Minimize, Maximize, Close on right side) */}
-        {isWin && !isFullScreen && <div className="w-[138px] shrink-0 pointer-events-none" />}
+        {isElectron && isWin && !isFullScreen && <div className="w-[138px] shrink-0 pointer-events-none" />}
       </header>
 
       {/* Main Body Below Top Header */}
@@ -1302,20 +1518,19 @@ export function App() {
             onOpenInExplorer={handleOpenInExplorer}
             onOpenSettings={() => setSettingsModalOpen(true)}
             onOpenShortcuts={() => setShortcutsModalOpen(true)}
-            width={leftSidebarWidth}
+            width={effectiveLeftWidth}
             onResize={handleLeftResize}
-            onResetWidth={() => handleLeftResize(280)}
+            onResetWidth={() => handleLeftResize(270)}
           />
         )}
 
         {/* Center Main Workspace */}
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-obsidian-panel min-w-0">
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--t-bg)] min-w-[420px]">
           {/* Tab Content Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {isLoading && (
-            <div className="absolute inset-0 bg-[#141416]/80 backdrop-blur z-20 flex flex-col items-center justify-center text-xs text-obsidian-muted gap-2.5">
-              <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-              <span>Loading investigation project...</span>
+            <div className="absolute inset-x-0 top-0 z-20 h-px bg-[var(--t-accent)] animate-pulse">
+              <span className="sr-only">Loading investigation…</span>
             </div>
           )}
 
@@ -1328,10 +1543,39 @@ export function App() {
                   localStorage.clear();
                   window.location.reload();
                 }}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
+                className="t-btn"
               >
-                Reset & Reload Workspace
+                Reset and reload workspace
               </button>
+            </div>
+          )}
+
+          {projectData && !activeTab && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[var(--t-bg)]">
+              <div className="w-[300px] text-[12px]">
+                <div className="t-label mb-2 px-2">Open</div>
+                {[
+                  { label: 'Graph', hint: '⌘G', run: () => openTab('graph', undefined, 'Interactive Graph') },
+                  { label: 'Case brief', hint: '⌘O', run: () => openTab('overview', undefined, 'Project Overview') },
+                  { label: 'Full-text search', hint: '⌘F', run: () => openTab('search', undefined, 'Full-Text Search') },
+                  { label: 'Go to anything…', hint: '⌘K', run: () => setCommandPaletteOpen(true) },
+                ].map((a) => (
+                  <button key={a.label} type="button" onClick={a.run} className="t-row w-full !h-[26px] !px-2 justify-between rounded-[3px]">
+                    <span>{a.label}</span>
+                    <span className="t-kbd">{a.hint}</span>
+                  </button>
+                ))}
+                <div className="t-label mt-4 mb-2 px-2">Create</div>
+                {[
+                  { label: 'New entity…', run: () => setEntityModalOpen(true) },
+                  { label: 'New relationship…', run: () => setRelModalOpen(true) },
+                  { label: 'New investigation…', run: () => setProjectModalOpen(true) },
+                ].map((a) => (
+                  <button key={a.label} type="button" onClick={a.run} className="t-row w-full !h-[26px] !px-2 rounded-[3px]">
+                    {a.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1375,6 +1619,9 @@ export function App() {
                   onSavePositions={handleSavePositions}
                   onBatchAddRelationships={handleBatchAddRelationships}
                   onConfirmRelationship={handleConfirmRelationship}
+                  onBatchAddEntitiesAndRelationships={handleBatchAddEntitiesAndRelationships}
+                  onCreateEntityAtPosition={handleCreateEntityAtPosition}
+                  activeRunningTransformId={activeRunningTransformId}
                 />
               )}
 
@@ -1569,12 +1816,23 @@ export function App() {
             setRelModalDefaultSource(sourceId);
             setRelModalOpen(true);
           }}
-          width={rightSidebarWidth}
+          onRunTransform={handleRunTransformFromSidebar}
+          activeRunningTransformId={activeRunningTransformId}
+          width={effectiveRightWidth}
           onResize={handleRightResize}
-          onResetWidth={() => handleRightResize(320)}
+          onResetWidth={() => handleRightResize(300)}
         />
       )}
       </div>
+
+      <StatusBar
+        projectData={projectData}
+        selectedEntityId={selectedEntityId}
+        selectedRelationshipId={selectedRelationshipId}
+        isDesktop={storage.isDesktop()}
+        isLoading={isLoading}
+        message={toastMessage}
+      />
 
       {/* Modals */}
       <NewEntityModal
@@ -1650,13 +1908,6 @@ export function App() {
         onOpenShortcuts={() => setShortcutsModalOpen(true)}
       />
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-4 right-4 z-50 bg-[#1e1e24] border border-obsidian-accent text-white px-3 py-2 rounded-md shadow-popover text-xs flex items-center space-x-2 animate-in fade-in slide-in-from-bottom-2">
-          <span className="w-2 h-2 rounded-full bg-obsidian-accent" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
     </div>
   );
 }

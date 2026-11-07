@@ -12,7 +12,7 @@ import {
   FileText,
   Link,
   ShieldCheck,
-  Star,
+  Bookmark,
 } from 'lucide-react';
 
 interface SourceEditorProps {
@@ -60,24 +60,24 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
   );
 
   return (
-    <div className="h-full flex flex-col bg-obsidian-panel overflow-y-auto">
+    <div className="h-full flex flex-col bg-[var(--t-bg)] overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3.5 bg-obsidian-panel/95 backdrop-blur border-b border-obsidian-border">
+      <div className="sticky top-0 z-20 h-[40px] shrink-0 flex items-center justify-between pl-4 pr-2 bg-[var(--t-panel)] border-b border-[var(--t-border)]">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-md bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-center text-emerald-400">
+          <div className="hidden">
             <Globe className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs text-obsidian-dim">{draft.id}</span>
+              <span className="font-mono text-[10.5px] text-zinc-600">{draft.id}</span>
               <span className="text-xs text-emerald-400 font-mono">[{draft.source_type}]</span>
               {isDirty && (
-                <span className="text-[11px] bg-amber-950/80 border border-amber-800 text-amber-300 px-1.5 py-0.2 rounded font-medium">
+                <span className="text-[10.5px] text-amber-400">
                   Unsaved changes
                 </span>
               )}
             </div>
-            <h1 className="text-lg font-semibold text-obsidian-text">{draft.title}</h1>
+            <h1 className="text-[13.5px] font-semibold text-zinc-50 leading-tight">{draft.title}</h1>
           </div>
         </div>
 
@@ -89,11 +89,11 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
               className={`px-2.5 py-1.5 flex items-center space-x-1.5 text-xs rounded-md font-medium transition-colors border ${
                 isQuickPinned
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                  : 'bg-[#18181f] text-obsidian-dim hover:text-white hover:bg-white/5 border-obsidian-border'
+                  : 'bg-[var(--t-raised)] text-obsidian-dim hover:text-white hover:bg-white/5 border-obsidian-border'
               }`}
               title={isQuickPinned ? 'Remove from Global Quick Access' : 'Pin to Global Quick Access'}
             >
-              <Star className={`w-3.5 h-3.5 ${isQuickPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+              <Bookmark className={`w-3.5 h-3.5 ${isQuickPinned ? 'fill-current text-zinc-200' : ''}`} />
               <span>{isQuickPinned ? 'In Quick Access' : 'Quick Access'}</span>
             </button>
           )}
@@ -103,7 +103,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
               href={draft.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 text-obsidian-dim hover:text-emerald-400 hover:bg-white/5 rounded-md transition-colors"
+              className="t-icon-btn"
               title="Open URL in Browser"
             >
               <ExternalLink className="w-4 h-4" />
@@ -114,10 +114,10 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
             type="button"
             onClick={handleSave}
             disabled={!isDirty}
-            className={`px-3 py-1.5 flex items-center space-x-1.5 text-xs rounded-md font-medium transition-colors ${
+            className={`t-btn ${
               isDirty
-                ? 'bg-obsidian-accent hover:bg-obsidian-accentHover text-white shadow-sm'
-                : 'bg-obsidian-card text-obsidian-dim cursor-not-allowed border border-obsidian-border'
+                ? 't-btn-primary'
+                : 'opacity-50 cursor-not-allowed'
             }`}
           >
             <Save className="w-3.5 h-3.5" />
@@ -127,7 +127,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
           <button
             type="button"
             onClick={() => onDelete(draft.id)}
-            className="p-1.5 text-obsidian-dim hover:text-rose-400 hover:bg-rose-950/40 rounded-md transition-colors"
+            className="t-icon-btn hover:!text-rose-400"
             title="Delete Source"
           >
             <Trash2 className="w-4 h-4" />
@@ -136,33 +136,33 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
       </div>
 
       {/* Body */}
-      <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
+      <div className="px-6 py-4 max-w-[980px] w-full space-y-5">
         {/* Source Metadata Card */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-4 shadow-subtle">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Source Title *
               </label>
               <input
                 type="text"
                 value={draft.title}
                 onChange={(e) => updateDraft({ title: e.target.value })}
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                className="t-input"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Source Type *
               </label>
               <select
                 value={draft.source_type}
                 onChange={(e) => updateDraft({ source_type: e.target.value as SourceType })}
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded text-sm text-obsidian-text focus:outline-none focus:border-obsidian-accent cursor-pointer"
+                className="t-input"
               >
                 {SOURCE_TYPES.map((st) => (
-                  <option key={st.type} value={st.type} className="bg-[#18181c]">
+                  <option key={st.type} value={st.type} className="bg-[var(--t-raised)]">
                     {st.label}
                   </option>
                 ))}
@@ -172,7 +172,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 URL / Archive Link
               </label>
               <div className="flex items-center space-x-1">
@@ -181,14 +181,14 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
                   value={draft.url || ''}
                   onChange={(e) => updateDraft({ url: e.target.value })}
                   placeholder="https://..."
-                  className="flex-1 px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded text-xs text-obsidian-text focus:outline-none focus:border-obsidian-accent"
+                  className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
                 />
                 {draft.url && (
                   <a
                     href={draft.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-1.5 text-obsidian-muted hover:text-white bg-[#141416] border border-obsidian-border rounded"
+                    className="p-1.5 text-obsidian-muted hover:text-white bg-[var(--t-panel)] border border-obsidian-border rounded"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
@@ -197,14 +197,14 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-obsidian-muted mb-1">
+              <label className="block text-[11px] text-zinc-500 mb-1">
                 Accessed / Archived At
               </label>
               <input
                 type="text"
                 value={draft.accessed_at}
                 onChange={(e) => updateDraft({ accessed_at: e.target.value })}
-                className="w-full px-3 py-1.5 bg-[#141416] border border-obsidian-border rounded text-xs text-obsidian-text font-mono focus:outline-none focus:border-obsidian-accent"
+                className="w-full px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-xs text-obsidian-text font-mono focus:outline-none focus:border-[var(--t-accent)]"
               />
             </div>
           </div>
@@ -214,10 +214,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-obsidian-text">Source Content & Extract</h2>
-              <p className="text-xs text-obsidian-dim">
-                Record the relevant excerpt, observations, and what this evidence establishes
-              </p>
+              <h2 className="t-label !text-zinc-400">Source Content & Extract</h2>
             </div>
           </div>
           <MarkdownEditor
@@ -231,8 +228,8 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
         </div>
 
         {/* Citations in Investigation */}
-        <div className="bg-obsidian-card border border-obsidian-border rounded-lg p-5 space-y-3 shadow-subtle">
-          <h2 className="text-sm font-semibold text-obsidian-text border-b border-obsidian-border pb-2">
+        <div className="border-t border-[var(--t-border)] pt-3 space-y-3">
+          <h2 className="t-label !text-zinc-400 border-b border-obsidian-border pb-2">
             Cited as Evidence in Relationships ({citingRelationships.length})
           </h2>
           {citingRelationships.length > 0 ? (
@@ -241,7 +238,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
                 <div
                   key={rel.id}
                   onClick={() => onOpenRelationship(rel.id)}
-                  className="p-2.5 bg-[#141416] hover:bg-obsidian-hover border border-obsidian-border rounded cursor-pointer transition-colors flex items-center justify-between"
+                  className="p-2.5 bg-[var(--t-panel)] hover:bg-obsidian-hover border border-obsidian-border rounded cursor-pointer transition-colors flex items-center justify-between"
                 >
                   <div className="truncate mr-3">
                     <span className="font-mono text-xs text-purple-300 font-medium">
