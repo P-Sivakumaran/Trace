@@ -152,8 +152,6 @@ build/                     App icons and packaging hooks
 - No telemetry, analytics or cloud services. The app only makes network requests you trigger (transforms and the API console).
 - Works fully offline for everything else.
 
-<a href="https://devhunt.org/tool/trace-osint" target="_blank" title="Trace OSINT on DevHunt"><img src="https://devhunt.org/badge/trace-osint.svg" alt="Trace OSINT - Featured on DevHunt" width="220" height="54" /></a>
-
 ## License
 
 [MIT](LICENSE)
