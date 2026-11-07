@@ -16,15 +16,62 @@
     "target": [
       {
         "target": "dmg",
-        "arch": ["arm64"]
+        "arch": [
+          "arm64",
+          "x64"
+        ]
       },
       {
         "target": "zip",
-        "arch": ["arm64"]
+        "arch": [
+          "arm64",
+          "x64"
+        ]
       }
     ],
     "category": "public.app-category.developer-tools",
     "hardenedRuntime": false,
     "gatekeeperAssess": false
+  },
+  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+  "win": {
+    "icon": "build/icon.png",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "linux": {
+    "icon": "build/icon.png",
+    "category": "Utility",
+    "maintainer": "Trace",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "tar.gz",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
   }
 }

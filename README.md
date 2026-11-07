@@ -1,178 +1,155 @@
-# Trace — Local-First OSINT & Intelligence Investigation Platform
+# Trace — Local-First OSINT Investigation & Link Analysis
 
 <p align="center">
   <img src="./build/icon.png" alt="Trace Logo" width="128" height="128" />
 </p>
 
 <p align="center">
-  <strong>Trace</strong> is a private, local-first intelligence investigation and link analysis tool designed for OSINT analysts, researchers, and forensic investigators. All project records are stored entirely on your local machine in plain Markdown with YAML frontmatter alongside an embedded, client-side SQLite database.
+  <strong>Trace</strong> is a desktop workbench for OSINT analysts, researchers and investigators. Map entities and relationships on a force-directed graph, attach evidence, and keep everything as plain Markdown files on your own machine.
 </p>
 
 ---
 <p align="center">
-  <img width="332" height="72" alt="alt-logo-white-4x" src="https://github.com/user-attachments/assets/55ddf5f0-cc50-49ec-82c5-38ff44b32a62" />
+  <img width="332" height="72" alt="trace-4x" src="https://github.com/user-attachments/assets/193f32d2-6dd4-4ab8-a61f-7d963827a479" />
 </p>
-<img width="1325" height="820" alt="app" src="https://github.com/user-attachments/assets/07906acd-c236-41e9-900d-422360f0c746" />
+<img width="1280" height="820" alt="Screenshot 2026-11-07 at 19 38 31" src="https://github.com/user-attachments/assets/5cd6b9de-4f24-4161-be9d-9f3d95153b00" />
 
-## Key Features
+## Features
 
-### Interactive Knowledge Graph
-- **Link & Entity Analysis**: Map complex networks of people, companies, organizations, domains, IP addresses, crypto wallets, and custom nodes.
-- **Physics-Driven Interactions**: Dynamic repulsion physics when dragging nodes, fluid bouncy response, and circular hover glow highlighting without boxy background wrappers.
-- **Fast Node Connection**: Press <kbd>C</kbd> (or click the Connect tool) and drag between any two nodes to instantly create relationships.
-- **Layout Algorithms**: Support for CoSE (force-directed), Concentric, and Breadthfirst layouts, with automatic layout position persistence across sessions.
-- **Embedded Images**: Direct rendering of profile avatars and photographic evidence within graph nodes.
-- **Wikilink Mentions**: Notes using `[[Target Entity]]` syntax automatically generate interactive dashed mention relationships on the graph canvas.
+### Graph
+- **Force-directed layout** (ForceAtlas2-style with Barnes–Hut): strongly connected entities form clusters around hubs, loose components stay near the main network, nodes never overlap. Handles thousands of nodes. Hierarchical, radial and grid layouts are also available.
+- **Stable layouts**: adding entities only places the new nodes next to their neighbours; existing positions are kept. Node positions can be saved per case.
+- **Readable at any scale**: small muted nodes coloured by entity type, thin low-contrast edges, labels revealed by importance as you zoom in, and a dimmed background when something is selected.
+- **Verification is visible**: confirmed and supported links are solid; unverified, candidate and rejected links are dashed or dotted and fainter.
+- **Working tools**: multi-select, shortest path between two nodes, collapse leaf entities into collections, size nodes by connections, filter by entity type and verification status, find-in-graph.
+- **Connect mode**: hold <kbd>C</kbd> (or <kbd>⌥</kbd>) and drag from one node to another to create a relationship.
+- **Notes on the graph**: `[[Entity name]]` mentions in notes appear as dotted links.
+- **Entity palette**: drag an entity type onto the canvas to create it in place.
 
-### Heuristic Relationship Discovery ("Find Links")
-- **Automated Intelligence Scanning**: Analyze entities across your project for non-obvious correlations:
-  - **Surnames**: Family connection heuristic matching patronymics and shared surnames.
-  - **Contacts**: Exact normalized phone numbers and email matching.
-  - **Corporate Networks**: Common corporate email domains (filtering out public mail hosts).
-  - **Infrastructure**: Shared IP addresses and hosts.
-  - **Organizations & Workplaces**: Common employers, companies, and locations.
-  - **Unique Identifiers**: Shared tax IDs (ІПН, ЄДРПОУ), passports, Telegram handles, and vehicle plates.
-  - **Attribute Mentions**: Cross-references when entity names appear inside another entity's attributes or notes.
-- **Analyst-in-the-Loop Verification**: Discovered connections are initially added as `unverified` candidate relationships with a visual indicator. Analysts can review evidence, filter by confidence score, and confirm directly on the graph canvas or in bulk.
+### Transforms
+Run lookups against an entity from the inspector or its context menu and get new entities and relationships back. Built-in machines cover domain footprinting, IP threat and infrastructure, and identity deep-dive. Output goes to the console under the graph.
 
-### Quick Sources & Interactive API Requester
-- **OSINT Bookmarks & Presets**: Instant access to OSINT tools, registries, and search engines (VirusTotal, Shodan, Censys, Whois, OpenSanctions, etc.).
-- **Live API Request Console**:
-  - Send HTTP requests directly from the app (<kbd>GET</kbd>, <kbd>POST</kbd>, <kbd>PUT</kbd>, <kbd>PATCH</kbd>, <kbd>DELETE</kbd>).
-  - Custom headers and formatted request body editor with JSON beautifier.
-  - Native Node/Electron IPC execution (`net:request`) bypassing browser CORS limitations.
-  - **Entity Linking**: Seamlessly attach API responses directly to entities as a project evidence source, formatted research note, or raw entity attribute.
+### Relationship discovery
+**Discover** scans a case for non-obvious links: shared surnames, phones and emails, corporate email domains, IPs and hosts, employers and locations, tax IDs, passports, Telegram handles, vehicle plates, and names mentioned in other entities' attributes. Suggestions are added as `unverified` candidates for you to review and confirm, one by one or in bulk.
 
-### Local-First File Architecture
-- **Complete Data Ownership**: No cloud sync dependencies or third-party telemetries.
-- Transparent storage layout under default directory `~/Documents/trace/projects/<project-id>/` (customizable to any folder via Project Switcher or Settings):
-  - `project.md`: Investigation scope, status, and Markdown briefing.
-  - `entities/*.md`: Individual entity profiles with structured YAML metadata and research notes.
-  - `relationships/*.md`: Directed and undirected links with confidence ratings and status flags.
-  - `sources/*.md`: Evidence citations and provenance logs.
-  - `notes/*.md`: Analyst field notes supporting GitHub Flavored Markdown.
-  - `graph-layout.json`: Persisted spatial coordinates for graph nodes.
+### Evidence and sources
+- Sources (webpages, documents, registries, leaks, interviews…) are cited by relationships as evidence.
+- **Tools** tab: bookmark OSINT sites and JSON APIs, with a preset pack (VirusTotal, Shodan, Censys, WHOIS, Wayback and others).
+- **API console**: send GET/POST/PUT/PATCH/DELETE requests with custom headers and body. In the desktop app requests run in the main process, so CORS does not apply. Attach a response to an entity as a source, a note, or an attribute.
 
-### Fast Full-Text Search (SQLite FTS5)
-- Powered by a local WebAssembly SQLite engine.
-- Instant indexed search across entity names, aliases, attributes, tags, relationships, and raw markdown contents.
+### Workspace
+- **Explorer**: entities grouped by type and sortable by connections, plus links, sources, notes and tools, all filterable.
+- **Inspector**: properties, relationships, evidence, notes and transforms for the selected entity or relationship; case composition when nothing is selected.
+- **Case brief**: the `project.md` working document with case statistics and the most connected entities.
+- **Full-text search**: local SQLite FTS5 (WebAssembly) over names, aliases, attributes, tags, relationships and Markdown bodies.
+- **Tabs and panels**: preview and pinned tabs, resizable panels, command palette, status bar.
 
-### Desktop User Experience
-- **Obsidian-Style Unified Titlebar**:
-  - Fixed 74px safe margin for macOS window controls (traffic lights) that never clip or displace when sidebars collapse.
-  - Direct sidebar toggle button (`PanelLeft`) positioned next to system controls.
-  - Integrated tab strip with preview mode, pinned tabs, and context menus.
-  - Compact project switcher dropdown with direct "Show in Finder" integration.
-- **Flexible Workspace Panels**:
-  - Resizable sidebars with drag handles and double-click reset.
-  - Quick keyboard navigation for fast OSINT workflows.
-  - Custom right-click context menus for all graph and tree items.
+### Local-first
+No accounts, no cloud sync, no telemetry. Each case is a folder of Markdown files that diff well and work with `git`:
 
-### Portable Project Archives
-- One-click export to standalone `.zip` archives containing all canonical Markdown files and layout metadata.
-- Seamless project import across machines.
+```
+~/Documents/trace/projects/<project-id>/
+├── project.md            # scope, status, briefing
+├── entities/*.md         # one file per entity (YAML frontmatter + notes)
+├── relationships/*.md    # direction, status, confidence, evidence
+├── sources/*.md          # evidence and provenance
+├── notes/*.md            # analyst notes (GitHub Flavored Markdown)
+└── graph-layout.json     # saved node positions
+```
+
+The folder can be changed in Settings. Cases can be exported to and imported from a `.zip`. The web build stores data in the browser instead.
 
 ---
 
-## Getting Started
+## Download
 
-### Prerequisites
-- **Node.js**: v18.0.0 or higher (v20+ recommended)
-- **npm** or **pnpm**
-- **Operating System**: macOS (Apple Silicon arm64 / Intel x64), Linux, or Windows
+Prebuilt desktop builds are produced with the packaging scripts below: macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Builds are not code-signed (macOS uses an ad-hoc signature), so your OS will warn on first launch.
 
-### Installation & Development
+## Development
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-username/trace.git
-   cd trace
-   ```
+**Requirements:** Node.js 18+ (20+ recommended) and npm.
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+```bash
+git clone https://github.com/dlxarl/Trace.git
+cd Trace
+npm install
+```
 
-3. **Start in browser development mode**:
-   ```bash
-   npm run dev
-   ```
+| Command | What it does |
+| :--- | :--- |
+| `npm run dev` | Run in the browser |
+| `npm run dev:electron` | Run as an Electron app |
+| `npm test` | Run the tests (Vitest) |
+| `npm run lint` | Lint with oxlint |
+| `npm run build` | Type-check and build the web bundle |
 
-4. **Start as a desktop Electron app**:
-   ```bash
-   npm run dev:electron
-   ```
+## Packaging
+
+Output goes to `release/`.
+
+| Command | Produces |
+| :--- | :--- |
+| `npm run package:mac` | `.dmg` and `.zip` for arm64 and x64 |
+| `npm run package:win` | NSIS installer and `.zip` (x64) |
+| `npm run package:linux` | `.AppImage` and `.tar.gz` (x64) |
+| `npm run package:all` | All of the above |
+| `npm run package:dir` | Unpacked macOS `.app` for quick testing |
+
+Each Electron build gets a fresh SHA-256 build identifier, shown in Settings and on the loading screen. The web build has none.
 
 ---
 
-## Packaging & Production Builds
-
-### Build Web Bundle
-```bash
-npm run build
-```
-
-### Build & Package for macOS
-Generates the `.dmg` installer and `.zip` distribution in the `release/` directory:
-```bash
-npm run package:mac
-```
-
-To package the `.app` bundle directory directly:
-```bash
-npm run package:dir
-```
-
----
-
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 | Shortcut | Action |
 | :--- | :--- |
-| <kbd>Cmd/Ctrl</kbd> + <kbd>K</kbd> | Open Command Palette / Global Search |
-| <kbd>Cmd/Ctrl</kbd> + <kbd>[</kbd> | Toggle Left Sidebar |
-| <kbd>Cmd/Ctrl</kbd> + <kbd>]</kbd> | Toggle Right Inspector Panel |
-| <kbd>Cmd/Ctrl</kbd> + <kbd>,</kbd> | Open Settings |
-| <kbd>C</kbd> | Toggle Connect Mode on Interactive Graph |
-| <kbd>?</kbd> | View Keyboard Shortcuts Cheat Sheet |
-| <kbd>Esc</kbd> | Dismiss active modal or context menu |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>K</kbd> | Command palette |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>G</kbd> | Graph |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>O</kbd> | Case brief |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>F</kbd> | Full-text search |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>[</kbd> / <kbd>]</kbd> | Toggle explorer / inspector |
+| <kbd>Cmd/Ctrl</kbd> + <kbd>,</kbd> | Settings |
+| <kbd>/</kbd> | Focus find-in-graph |
+| <kbd>F</kbd> / <kbd>L</kbd> / <kbd>N</kbd> | Fit view / re-run layout / new entity (graph focused) |
+| <kbd>C</kbd> | Connect mode |
+| <kbd>?</kbd> | Shortcut sheet |
+| <kbd>Esc</kbd> | Close dialog, menu or clear search |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
-trace/
-├── electron/              # Electron main and preload processes
-│   ├── main.ts            # Window creation, native filesystem IPC handlers
-│   └── preload.ts         # Secure context bridge implementation
-├── src/
-│   ├── components/        # Reusable UI widgets and dialogs
-│   │   ├── layout/        # Header, TabBar, LeftSidebar, RightSidebar
-│   │   └── modals/        # Settings, shortcuts, and entity creation dialogs
-│   ├── features/          # Core investigation modules
-│   │   ├── graph/         # Cytoscape integration, physics, canvas rendering
-│   │   └── projects/      # Project overview and metadata editor
-│   ├── services/          # Business logic and storage layer
-│   │   ├── storage/       # Local-First adapters (ElectronStorage, BrowserStorage)
-│   │   ├── markdownParser.ts # YAML frontmatter parser and serializer
-│   │   └── sqliteIndex.ts # Embedded SQLite FTS5 WASM search indexer
-│   └── types/             # Domain TypeScript definitions and schemas
-├── public/                # Static SQLite WASM binaries
-└── build/                 # Desktop application icons and packaging assets
+electron/                  Main and preload processes (filesystem, HTTP, window)
+src/
+├── components/
+│   ├── common/            Dialog, status badge, entity icons, Markdown editor
+│   ├── layout/            Tab bar, explorer, inspector, status bar
+│   └── modals/            Settings, shortcuts, command palette, entity/relationship dialogs
+├── features/
+│   ├── graph/             Graph view, force layout, theme, palette, transform console
+│   ├── entities/ relationships/ sources/ notes/   Editors
+│   ├── projects/          Case brief
+│   └── search/            Full-text search
+├── services/
+│   ├── storage/           Electron (disk) and browser adapters
+│   ├── transforms/        Transform registry and HTTP client
+│   ├── discovery/         Relationship discovery heuristics
+│   ├── markdownParser.ts  Frontmatter parser and serializer
+│   └── sqliteIndex.ts     SQLite FTS5 indexer
+├── tests/                 Vitest suites
+└── types/                 Domain types and schemas
+build/                     App icons and packaging hooks
 ```
 
 ---
 
-## Security & Privacy
+## Security and privacy
 
-1. All investigation data stays on your local filesystem in human-readable Markdown files suitable for standard version control (`git`).
-2. No background telemetries, no cloud tracking, and no external analytics.
-3. Completely air-gapped capability for sensitive investigation environments.
-
----
+- Data stays on your filesystem as readable Markdown.
+- No telemetry, analytics or cloud services. The app only makes network requests you trigger (transforms and the API console).
+- Works fully offline for everything else.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)

@@ -79,16 +79,16 @@ function createWindow() {
     height: 820,
     minWidth: 1000,
     minHeight: 650,
-    backgroundColor: '#141416',
+    backgroundColor: '#111113',
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     titleBarOverlay: isWin
       ? {
-          color: '#121215',
+          color: '#151517',
           symbolColor: '#cbd5e1',
-          height: 38,
+          height: 30,
         }
       : undefined,
-    trafficLightPosition: isMac ? { x: 14, y: 12 } : undefined,
+    trafficLightPosition: isMac ? { x: 14, y: 9 } : undefined,
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
