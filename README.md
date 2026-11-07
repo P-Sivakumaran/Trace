@@ -63,7 +63,9 @@ The folder can be changed in Settings. Cases can be exported to and imported fro
 
 ## Download
 
-Prebuilt desktop builds are produced with the packaging scripts below: macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Builds are not code-signed (macOS uses an ad-hoc signature), so your OS will warn on first launch.
+Get the latest build from the [**v0.1.0-alpha.2 release**](https://github.com/dlxarl/Trace/releases/tag/v0.1.0-alpha.2): macOS (Apple Silicon and Intel), Windows x64 and Linux x64.
+
+Builds are not code-signed (macOS uses an ad-hoc signature), so your OS will warn on first launch. On macOS, right-click the app and choose Open.
 
 ## Development
 
