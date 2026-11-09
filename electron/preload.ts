@@ -86,4 +86,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App version
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // External tools (marketplace)
+  tools: {
+    status: () => ipcRenderer.invoke('tools:status'),
+    install: (id: string) => ipcRenderer.invoke('tools:install', id),
+    uninstall: (id: string) => ipcRenderer.invoke('tools:uninstall', id),
+    run: (id: string, input: string, runId: string) => ipcRenderer.invoke('tools:run', { id, input, runId }),
+    cancel: (runId: string) => ipcRenderer.invoke('tools:cancel', runId),
+    onLog: (cb: (e: { runId: string; line: string; stream: string }) => void) => {
+      const handler = (_: unknown, e: { runId: string; line: string; stream: string }) => cb(e);
+      ipcRenderer.on('tools:log', handler);
+      return () => ipcRenderer.removeListener('tools:log', handler);
+    },
+  },
+
+  // Read-only MCP server switch
+  mcp: {
+    status: () => ipcRenderer.invoke('mcp:status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('mcp:setEnabled', enabled),
+  },
 });

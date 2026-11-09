@@ -7,8 +7,13 @@ import {
   RefreshCw,
   Trash2,
   Keyboard,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Workspace } from '@/types';
+import { checkForUpdates, RELEASES_PAGE_URL, type UpdateCheckResult } from '@/services/updates/updateChecker';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -45,6 +50,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return localStorage.getItem('trace_settings_aura') !== 'false';
   });
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [updateState, setUpdateState] = useState<'idle' | 'checking'>('idle');
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+
+  const handleCheckForUpdates = async () => {
+    if (updateState === 'checking') return;
+    setUpdateState('checking');
+    setUpdateResult(null);
+    // Non-blocking: the dialog and app stay interactive while this resolves.
+    const result = await checkForUpdates(__APP_VERSION__);
+    setUpdateResult(result);
+    setUpdateState('idle');
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -192,6 +209,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </Row>
           </Section>
 
+          <Section title="About & Updates">
+            <Row label="Trace" description={`Installed version ${__APP_VERSION__}`}>
+              <button type="button" onClick={handleCheckForUpdates} className="t-btn" disabled={updateState === 'checking'}>
+                {updateState === 'checking' ? (
+                  <Loader2 className="w-3.5 h-3.5 opacity-70 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5 opacity-70" />
+                )}
+                {updateState === 'checking' ? 'Checking…' : 'Check for Updates'}
+              </button>
+            </Row>
+            {updateResult && <UpdateResultRow result={updateResult} />}
+          </Section>
+
           <Section title="Danger Zone" danger>
             <Row label="Reset local application data" description="Clears local storage and re-seeds the sample project. Cannot be undone.">
               <button
@@ -222,6 +253,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+/** Outcome of a "Check for Updates" request. Never downloads anything. */
+const UpdateResultRow: React.FC<{ result: UpdateCheckResult }> = ({ result }) => {
+  if (result.status === 'error') {
+    return (
+      <div className="px-4 py-3 text-[11.5px]" role="status">
+        <div className="text-amber-400">Could not check for updates</div>
+        <div className="text-zinc-500 mt-0.5">{result.message}</div>
+        <a href={RELEASES_PAGE_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[var(--t-accent)] hover:underline">
+          Open releases page <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+    );
+  }
+  if (result.status === 'up-to-date') {
+    return (
+      <div className="px-4 py-3 text-[11.5px]" role="status">
+        <div className="text-emerald-400">Trace is up to date.</div>
+        <div className="text-zinc-500 mt-0.5">
+          {result.latest ? `Latest release: ${result.latest.version}` : 'No newer release found.'}
+        </div>
+      </div>
+    );
+  }
+  const { latest } = result;
+  return (
+    <div className="px-4 py-3 text-[11.5px]" role="status">
+      <div className="flex items-center gap-2">
+        <span className="text-zinc-100 font-medium">Update available: {latest.version}</span>
+        {latest.prerelease && <span className="t-kbd !text-[10px]">pre-release</span>}
+        <span className="text-zinc-500 font-mono text-[10.5px]">{latest.publishedAt.slice(0, 10)}</span>
+        <div className="flex-1" />
+        <a href={latest.url} target="_blank" rel="noopener noreferrer" className="t-btn t-btn-primary">
+          <ExternalLink className="w-3.5 h-3.5" />
+          View release
+        </a>
+      </div>
+      {latest.notes && (
+        <div className="mt-2 max-h-[220px] overflow-y-auto rounded-[3px] border border-[var(--t-border)] bg-[var(--t-bg)] px-3 py-2 text-zinc-300 text-[11.5px] leading-relaxed select-text [&_h1]:text-[12.5px] [&_h2]:text-[12px] [&_h3]:text-[11.5px] [&_h1,&_h2,&_h3]:font-semibold [&_h1,&_h2,&_h3]:text-zinc-100 [&_h1,&_h2,&_h3]:mt-2 [&_h1,&_h2,&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1 [&_a]:text-[var(--t-accent)] [&_code]:font-mono [&_code]:text-[10.5px]">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{latest.notes}</ReactMarkdown>
+        </div>
+      )}
     </div>
   );
 };

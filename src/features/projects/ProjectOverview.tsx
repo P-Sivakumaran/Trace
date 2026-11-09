@@ -3,7 +3,7 @@ import { Project, ProjectData, RELATIONSHIP_STATUSES, ENTITY_TYPES } from '@/typ
 import { getEntityTypeColor } from '@/components/common/EntityIcon';
 import { StatusGlyph } from '@/components/common/StatusBadge';
 import { MarkdownEditor } from '@/components/common/MarkdownEditor';
-import { Network, Download, RefreshCw, Plus, Save, FolderOpen, Link2 } from 'lucide-react';
+import { Network, Download, RefreshCw, Plus, Save, FolderOpen, Link2, FileInput } from 'lucide-react';
 
 interface ProjectOverviewProps {
   projectData: ProjectData;
@@ -13,6 +13,7 @@ interface ProjectOverviewProps {
   onCreateRelationship: () => void;
   onExportZip: () => void;
   onRebuildIndex: () => void;
+  onImportData?: () => void;
   onOpenEntity: (entityId: string) => void;
   onOpenInExplorer?: () => void;
 }
@@ -41,6 +42,7 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
   onCreateRelationship,
   onExportZip,
   onRebuildIndex,
+  onImportData,
   onOpenEntity,
   onOpenInExplorer,
 }) => {
@@ -112,6 +114,12 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
           <Link2 className="w-3 h-3" />
           Relationship
         </button>
+        {onImportData && (
+          <button type="button" onClick={onImportData} className="t-btn" title="Import output from external OSINT tools">
+            <FileInput className="w-3 h-3" />
+            Import data
+          </button>
+        )}
         <div className="w-px h-4 bg-[var(--t-border)] mx-1" />
         {onOpenInExplorer && (
           <button type="button" onClick={onOpenInExplorer} className="t-icon-btn" title="Reveal case folder">
@@ -177,6 +185,8 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({
             <dd className="font-mono tabular-nums">{projectData.sources.length}</dd>
             <dt>Notes</dt>
             <dd className="font-mono tabular-nums">{projectData.notes.length}</dd>
+            <dt>Imported entities</dt>
+            <dd className="font-mono tabular-nums">{projectData.entities.filter((e) => e.extraFrontmatter?.trace_import).length}</dd>
             <dt>Unsourced links</dt>
             <dd className={`font-mono tabular-nums ${unsourced > 0 ? 'text-amber-400' : ''}`}>{unsourced}</dd>
           </dl>

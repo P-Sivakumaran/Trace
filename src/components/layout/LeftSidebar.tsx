@@ -25,6 +25,8 @@ import {
   Trash2,
   Download,
   Upload,
+  FileInput,
+  Blocks,
   RefreshCw,
   ExternalLink,
   Copy,
@@ -69,6 +71,7 @@ interface LeftSidebarProps {
   onCreateNoteModal: () => void;
   onExportZip: () => void;
   onImportZip: () => void;
+  onImportData?: () => void;
   onRebuildIndex: () => void;
   onDeleteEntity?: (id: string) => void;
   onDeleteRelationship?: (id: string) => void;
@@ -144,6 +147,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onCreateNoteModal,
   onExportZip,
   onImportZip,
+  onImportData,
   onRebuildIndex,
   onDeleteEntity,
   onDeleteRelationship,
@@ -398,7 +402,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { id: 'links', label: 'Links', count: projectData?.relationships.length || 0 },
     { id: 'sources', label: 'Sources', count: projectData?.sources.length || 0 },
     { id: 'notes', label: 'Notes', count: projectData?.notes.length || 0 },
-    { id: 'tools', label: 'Tools', count: quickSources.length },
+    { id: 'tools', label: 'Bookmarks', count: quickSources.length },
   ];
 
   const handleAdd = () => {
@@ -408,7 +412,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     else if (view === 'notes') onCreateNoteModal();
     else setNewQuickSourceOpen(true);
   };
-  const addLabel = { entities: 'New entity', links: 'New relationship', sources: 'New source', notes: 'New note', tools: 'Add tool / API' }[view];
+  const addLabel = { entities: 'New entity', links: 'New relationship', sources: 'New source', notes: 'New note', tools: 'Add bookmark / API' }[view];
 
   const Empty: React.FC<{ text: string }> = ({ text }) => (
     <div className="px-3 py-3 text-[11.5px] text-zinc-600">{q ? 'No matches' : text}</div>
@@ -438,7 +442,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         <RailButton active={activeTabType === 'search'} title="Full-text search  (⌘F)" onClick={() => onOpenTab('search', undefined, 'Full-Text Search')}>
           <Search />
         </RailButton>
+        <RailButton active={activeTabType === 'tools'} title="Tools — run OSINT tools, marketplace, MCP" onClick={() => onOpenTab('tools', undefined, 'Tools')}>
+          <Blocks />
+        </RailButton>
         <div className="flex-1" />
+        {onImportData && activeProjectId && (
+          <RailButton title="Import tool output (SpiderFoot, CSV, indicator list, JSON)" onClick={onImportData}>
+            <FileInput />
+          </RailButton>
+        )}
         <RailButton title="Import case archive (.zip)" onClick={onImportZip}>
           <Upload />
         </RailButton>

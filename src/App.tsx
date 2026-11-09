@@ -35,6 +35,10 @@ import { DeleteConfirmModal } from '@/components/modals/DeleteConfirmModal';
 import { CommandPaletteModal } from '@/components/modals/CommandPaletteModal';
 import { ShortcutsModal } from '@/components/modals/ShortcutsModal';
 import { SettingsModal } from '@/components/modals/SettingsModal';
+import { ImportDataModal } from '@/components/modals/ImportDataModal';
+import { ToolsView } from '@/features/tools/ToolsView';
+import type { ImportBatch } from '@/services/import/types';
+import type { ImportRecords } from '@/services/import/plan';
 import { createSampleProject } from '@/services/storage/sampleData';
 import { getTransformById } from '@/services/transforms/registry';
 import {
@@ -101,7 +105,7 @@ export function App() {
     }
   }, []);
 
-  const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
+  const isElectron = typeof window !== 'undefined' && (window as any).electronAPI?.isDesktop === true;
   const isMac = platform === 'darwin';
   const isWin = platform === 'win32';
 
@@ -153,6 +157,8 @@ export function App() {
   const [entityModalOpen, setEntityModalOpen] = useState<boolean>(false);
   const [entityModalDefaultType, setEntityModalDefaultType] = useState<EntityType | undefined>(undefined);
   const [relModalOpen, setRelModalOpen] = useState<boolean>(false);
+  const [importDataOpen, setImportDataOpen] = useState<boolean>(false);
+  const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
   const [relModalDefaultSource, setRelModalDefaultSource] = useState<string | undefined>(undefined);
   const [relModalDefaultTarget, setRelModalDefaultTarget] = useState<string | undefined>(undefined);
 
@@ -927,6 +933,8 @@ export function App() {
           ? 'Project Overview'
           : type === 'search'
           ? 'Full-Text Search'
+          : type === 'tools'
+          ? 'Tools'
           : `${type.toUpperCase()} Record`);
 
       const wantsPreview =
@@ -940,7 +948,8 @@ export function App() {
           !t.isPinned &&
           t.type !== 'graph' &&
           t.type !== 'overview' &&
-          t.type !== 'search'
+          t.type !== 'search' &&
+          t.type !== 'tools'
       );
 
       const newTab: Tab = {
@@ -1228,6 +1237,19 @@ export function App() {
     }
   };
 
+  // Import external tool output (reviewed in ImportDataModal). Only creates
+  // records; existing entities are referenced, never rewritten.
+  const handleCommitImport = async (records: ImportRecords) => {
+    if (!activeProjectId) return;
+    await storage.saveSource(activeProjectId, records.source);
+    for (const ent of records.entities) await storage.saveEntity(activeProjectId, ent);
+    for (const rel of records.relationships) await storage.saveRelationship(activeProjectId, rel);
+    const updated = await storage.getProject(activeProjectId);
+    setProjectData(updated);
+    await loadWorkspaceData();
+    showToast(`Imported ${records.entities.length} entities, ${records.relationships.length} relationships`);
+  };
+
   // Import ZIP
   const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1509,6 +1531,7 @@ export function App() {
             }}
             onExportZip={handleExportZip}
             onImportZip={() => fileInputRef.current?.click()}
+            onImportData={() => setImportDataOpen(true)}
             onRebuildIndex={handleRebuildIndex}
             onDeleteEntity={handleDeleteEntity}
             onDeleteRelationship={handleDeleteRelationship}
@@ -1634,6 +1657,7 @@ export function App() {
                   onCreateRelationship={() => setRelModalOpen(true)}
                   onExportZip={handleExportZip}
                   onRebuildIndex={handleRebuildIndex}
+                  onImportData={() => setImportDataOpen(true)}
                   onOpenEntity={(id) => {
                     const e = projectData.entities.find((ent) => ent.id === id);
                     openTab('entity', id, e ? e.name : id);
@@ -1769,6 +1793,17 @@ export function App() {
                 })()
               )}
 
+              {activeTab.type === 'tools' && (
+                <ToolsView
+                  projectData={projectData}
+                  selectedEntityId={selectedEntityId}
+                  onReviewBatch={(batch) => {
+                    setImportBatch(batch);
+                    setImportDataOpen(true);
+                  }}
+                />
+              )}
+
               {activeTab.type === 'search' && activeProjectId && (
                 <SearchView
                   onSearch={(q) => storage.search(activeProjectId, q)}
@@ -1893,6 +1928,17 @@ export function App() {
       <ShortcutsModal
         isOpen={shortcutsModalOpen}
         onClose={() => setShortcutsModalOpen(false)}
+      />
+
+      <ImportDataModal
+        isOpen={importDataOpen}
+        onClose={() => {
+          setImportDataOpen(false);
+          setImportBatch(null);
+        }}
+        projectData={projectData}
+        initialBatch={importBatch}
+        onCommit={handleCommitImport}
       />
 
       <SettingsModal

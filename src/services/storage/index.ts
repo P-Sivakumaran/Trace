@@ -5,7 +5,7 @@ import { IStorageService } from './IStorageService';
 let storageInstance: IStorageService | null = null;
 
 export function getStorageService(): IStorageService {
-  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.isDesktop === true) {
     if (!(storageInstance instanceof ElectronStorageAdapter)) {
       storageInstance = new ElectronStorageAdapter();
     }

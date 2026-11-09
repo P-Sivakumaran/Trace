@@ -72,6 +72,33 @@ declare global {
         durationMs?: number;
       }>;
       getVersion?: () => Promise<string>;
+      tools?: {
+        status: () => Promise<{
+          python: { found: boolean; command?: string; version?: string };
+          tools: { id: string; installed: boolean; version?: string; installedAt?: string }[];
+          platform: string;
+        }>;
+        install: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        uninstall: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        run: (id: string, input: string, runId: string) => Promise<
+          | { ok: true; value: string; exitCode: number | null; stdout: string; stderrTail: string; timedOut: boolean; cancelled: boolean; durationMs: number; startedAt: string }
+          | { ok: false; error: string }
+        >;
+        cancel: (runId: string) => Promise<boolean>;
+        onLog: (cb: (e: { runId: string; line: string; stream: string }) => void) => () => void;
+      };
+      mcp?: {
+        status: () => Promise<{
+          enabled: boolean;
+          available: boolean;
+          command: string;
+          args: string[];
+          env: Record<string, string>;
+          workspacePath: string;
+          configPath: string;
+        }>;
+        setEnabled: (enabled: boolean) => Promise<boolean>;
+      };
     };
   }
 }

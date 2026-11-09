@@ -4,12 +4,15 @@ import {
   Entity,
   EntityType,
   ENTITY_TYPES,
+  EVIDENCE_CLASSES,
+  evidenceClassOf,
   ProjectData,
   Relationship,
   RelationshipStatus,
   RELATIONSHIP_STATUSES,
 } from '@/types';
 import { EntityIcon, getEntityTypeColor, getEntityTypeLabel } from '@/components/common/EntityIcon';
+import { graphIconFor } from './graphIcons';
 import { StatusGlyph } from '@/components/common/StatusBadge';
 import {
   Maximize2,
@@ -245,6 +248,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   // Hover State & Toast
   const [hoveredNode, setHoveredNode] = useState<HoveredNodeState | null>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<{ id: string; x: number; y: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Dragging Relationship Connection State (Key C / Alt / Option or Node Handle or Connect Mode)
@@ -698,6 +702,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               label: `${leafEntities.length} × ${getEntityTypeLabel(type)}`,
               type,
               color,
+              icon: graphIconFor(type) || undefined,
               nodeSize: 16,
               degree: leafEntities.length,
               isCollection: true,
@@ -737,6 +742,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             label: entity.name,
             type: entity.type,
             color: graphNodeColor(entity.type),
+            icon: graphIconFor(entity.type) || undefined,
             nodeSize: sizeFor(deg),
             degree: deg,
             imageUrl: photo || undefined,
@@ -795,6 +801,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             lineStyle: GRAPH_EDGE_STYLE[status] ?? 'solid',
             directed: rel.directed !== false,
             confidence: rel.confidence,
+            evidenceCount: (rel.evidence || []).length,
           },
         };
       });
@@ -925,6 +932,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'node[degree >= 6]',
           style: { 'z-index': 20, 'color': '#d0d3d9' },
         },
+        // Entity-type glyph inside the node (issue #1). Photos below override it.
+        {
+          selector: 'node[icon]',
+          style: {
+            'background-image': 'data(icon)',
+            'background-fit': 'none',
+            'background-width': '62%',
+            'background-height': '62%',
+            'background-image-opacity': 0,
+            'background-image-smoothing': 'yes',
+          } as any,
+        },
+        {
+          selector: 'node[icon].hovered, node[icon]:selected',
+          style: { 'background-image-opacity': 0.9 } as any,
+        },
         {
           selector: 'node[imageUrl]',
           style: {
@@ -1042,6 +1065,26 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'width': 1.3,
             'line-opacity': 0.85,
             'z-index': 600,
+          },
+        },
+        // Evidence indicator (issue #2): a dot at the midpoint of emphasised
+        // edges. Filled = at least one evidence source, hollow = unsourced.
+        {
+          selector: 'edge.emph[evidenceCount > 0]',
+          style: {
+            'mid-target-arrow-shape': 'circle',
+            'mid-target-arrow-fill': 'filled',
+            'mid-target-arrow-color': 'data(color)',
+            'arrow-scale': 0.55,
+          },
+        },
+        {
+          selector: 'edge.emph[evidenceCount = 0]',
+          style: {
+            'mid-target-arrow-shape': 'circle',
+            'mid-target-arrow-fill': 'hollow',
+            'mid-target-arrow-color': '#c6a463',
+            'arrow-scale': 0.55,
           },
         },
         {
@@ -1221,15 +1264,23 @@ export const GraphView: React.FC<GraphViewProps> = ({
     cy.on('mouseover', 'edge', (evt: EventObject) => {
       const edge = evt.target;
       edge.addClass('hovered-connected');
+      const container = containerRef.current;
+      const oe = evt.originalEvent as MouseEvent | undefined;
+      if (container && oe && !String(edge.id()).startsWith('edge-coll') && !String(edge.id()).startsWith('rel-note-')) {
+        setHoveredEdge({ id: edge.id(), x: oe.clientX, y: oe.clientY });
+      }
     });
 
     cy.on('mouseout', 'edge', (evt: EventObject) => {
       const edge = evt.target;
       edge.removeClass('hovered-connected');
+      setHoveredEdge(null);
     });
 
+    cy.on('tapstart', () => setHoveredEdge(null));
     cy.on('pan zoom', () => {
       setHoveredNode(null);
+      setHoveredEdge(null);
     });
 
     // Selection handlers
@@ -1489,6 +1540,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         .fromJson([
           ...(baseStyleRef.current || []),
           { selector: 'node', style: { 'font-size': fontBucket, 'text-margin-y': Math.max(1.5, 3 / zq), 'text-max-width': `${Math.round(170 * (fontBucket / 10.5))}px`, 'text-background-padding': `${Math.max(1.5, 2 / zq)}px` } },
+          // Glyphs only once a node is big enough on screen to read them.
+          { selector: 'node[icon]', style: { 'background-image-opacity': zq >= 1.19 ? 0.85 : 0 } },
+          { selector: 'node[icon][degree >= 6]', style: { 'background-image-opacity': zq >= 0.84 ? 0.85 : 0 } },
+          { selector: 'node[icon].hovered, node[icon]:selected', style: { 'background-image-opacity': 0.9 } },
           { selector: 'edge', style: { 'font-size': fontBucket * 0.85, 'width': Math.max(0.8, 0.7 / zq) } },
           { selector: 'edge.emph, edge.hovered-connected', style: { 'width': Math.max(1.3, 1.2 / zq) } },
           { selector: 'edge:selected', style: { 'width': Math.max(1.8, 1.6 / zq) } },
@@ -2276,6 +2331,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       <div className="relative flex-1 min-h-0">
       <div
         ref={containerRef}
+        onMouseLeave={() => setHoveredEdge(null)}
         onDragOver={(e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
@@ -2510,6 +2566,46 @@ export const GraphView: React.FC<GraphViewProps> = ({
           );
         }
         return null;
+      })()}
+
+      {/* Edge hover: evidence trail of the relationship (issue #2) */}
+      {hoveredEdge && !hoveredNode && !contextMenu.visible && (() => {
+        const rel = projectData.relationships.find((r) => r.id === hoveredEdge.id);
+        if (!rel) return null;
+        const width = 280;
+        let left = hoveredEdge.x + 14;
+        let top = hoveredEdge.y + 12;
+        if (left + width > window.innerWidth - 12) left = hoveredEdge.x - width - 14;
+        if (top + 180 > window.innerHeight - 12) top = Math.max(12, hoveredEdge.y - 180);
+        const cls = EVIDENCE_CLASSES.find((c) => c.cls === evidenceClassOf(rel.status));
+        const srcName = projectData.entities.find((e) => e.id === rel.source_entity)?.name || rel.source_entity;
+        const tgtName = projectData.entities.find((e) => e.id === rel.target_entity)?.name || rel.target_entity;
+        const evidence = (rel.evidence || []).map((id) => ({ id, src: projectData.sources.find((s) => s.id === id) }));
+        return (
+          <div className="t-menu fixed z-40 pointer-events-none !py-2 text-[12px]" style={{ left, top, width }}>
+            <div className="px-2.5 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="t-label">{rel.type}</span>
+                <span className="ml-auto text-[10.5px] text-zinc-400">{cls?.label}</span>
+              </div>
+              <div className="text-[11.5px] text-zinc-200 truncate">{srcName} {rel.directed !== false ? '→' : '—'} {tgtName}</div>
+            </div>
+            <div className="mt-1.5 pt-1.5 border-t border-[var(--t-border)] px-2.5 space-y-[3px]">
+              {evidence.length === 0 && <div className="text-[11px] text-amber-400/90">No evidence sources attached</div>}
+              {evidence.slice(0, 4).map(({ id, src }) => (
+                <div key={id} className="text-[11px] min-w-0">
+                  <div className="text-zinc-300 truncate">{src ? src.title : id}</div>
+                  {src && (
+                    <div className="font-mono text-[10px] text-zinc-500 truncate">
+                      {src.accessed_at ? String(src.accessed_at).slice(0, 10) : ''}{src.url ? ` · ${src.url}` : ''}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {evidence.length > 4 && <div className="text-[10.5px] text-zinc-600">+{evidence.length - 4} more</div>}
+            </div>
+          </div>
+        );
       })()}
 
       {/* Transient feedback, bottom-left of the canvas */}
