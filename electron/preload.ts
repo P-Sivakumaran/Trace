@@ -65,13 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveGraphLayout: (projectId: string, layout: any) =>
     ipcRenderer.invoke('graph:saveLayout', { projectId, layout }),
 
-  // Search & Indexing
-  search: (projectId: string, query: string) =>
-    ipcRenderer.invoke('search:query', { projectId, query }),
-  rebuildIndex: (projectId: string) => ipcRenderer.invoke('search:rebuild', projectId),
-
-  // Import / Export
-  exportProjectZip: (projectId: string) => ipcRenderer.invoke('projects:exportZip', projectId),
+  // Import (export stays renderer-side; there's no partial-write risk reading existing data)
   importProjectZip: (buffer: ArrayBuffer) => ipcRenderer.invoke('projects:importZip', buffer),
 
   // File System Dialog & Open in Explorer

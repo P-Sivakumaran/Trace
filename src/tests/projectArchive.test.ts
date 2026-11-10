@@ -58,23 +58,23 @@ describe('case archive import', () => {
     expect((await storage.getProject(imported))?.entities).toHaveLength(1);
   });
 
-  it('desktop validation completes before any create or save call', async () => {
-    const createProject = vi.fn();
-    vi.stubGlobal('window', { electronAPI: { createProject } });
+  it('desktop import delegates the whole archive to the main-process transactional importer', async () => {
+    const importProjectZip = vi.fn().mockRejectedValue(new Error('invalid'));
+    vi.stubGlobal('window', { electronAPI: { importProjectZip } });
     try {
       const { zip } = await archive();
       zip.file('projects/case[1].+/entities/bad.md', '---\nid: ../escape\n---\nInvalid');
-      await expect(new ElectronStorageAdapter().importProjectZip(await zip.generateAsync({ type: 'arraybuffer' }))).rejects.toThrow();
-      expect(createProject).not.toHaveBeenCalled();
+      const buffer = await zip.generateAsync({ type: 'arraybuffer' });
+      await expect(new ElectronStorageAdapter().importProjectZip(buffer)).rejects.toThrow();
+      expect(importProjectZip).toHaveBeenCalledWith(buffer);
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it('desktop import creates a separate case and persists its active selection', async () => {
-    const createProject = vi.fn().mockResolvedValue({});
+  it('desktop import persists the active selection returned by the main process', async () => {
+    const importProjectZip = vi.fn().mockResolvedValue('imported-case');
     const saveWorkspace = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('window', { electronAPI: {
-      listProjects: async () => [{ id: 'archive-case' }], createProject,
-      saveProject: async () => {}, saveEntity: async () => {}, saveGraphLayout: async () => {},
+      importProjectZip,
       getWorkspace: async () => ({ id: 'workspace', activeProjectId: 'archive-case' }), saveWorkspace,
     } });
     try {
@@ -82,9 +82,8 @@ describe('case archive import', () => {
       vi.spyOn(storage, 'rebuildIndex').mockResolvedValue(undefined);
       const { zip } = await archive();
       const imported = await storage.importProjectZip(await zip.generateAsync({ type: 'arraybuffer' }));
-      expect(imported).not.toBe('archive-case');
-      expect(createProject.mock.calls[0][2]).toBe(imported);
-      expect(saveWorkspace).toHaveBeenCalledWith(expect.objectContaining({ activeProjectId: imported }));
+      expect(imported).toBe('imported-case');
+      expect(saveWorkspace).toHaveBeenCalledWith(expect.objectContaining({ activeProjectId: 'imported-case' }));
     } finally { vi.unstubAllGlobals(); }
   });
 });

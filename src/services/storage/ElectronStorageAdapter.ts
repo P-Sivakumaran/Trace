@@ -1,5 +1,4 @@
 import JSZip from 'jszip';
-import { availableImportId, readProjectArchive } from './projectArchive';
 import {
   Entity,
   GraphLayout,
@@ -60,6 +59,7 @@ declare global {
       getGraphLayout: (projectId: string) => Promise<GraphLayout>;
       saveGraphLayout: (projectId: string, layout: GraphLayout) => Promise<void>;
       openInExplorer: (projectId?: string) => Promise<boolean>;
+      importProjectZip: (buffer: ArrayBuffer) => Promise<string>;
       onStorageChange: (callback: (event: StorageChangeEvent) => void) => () => void;
       selectDirectory: () => Promise<string | null>;
       sendApiRequest?: (req: {
@@ -247,16 +247,10 @@ export class ElectronStorageAdapter implements IStorageService {
   }
 
   async importProjectZip(file: File | ArrayBuffer): Promise<string> {
-    const { data, layout } = await readProjectArchive(file);
-    data.project.id = availableImportId(data.project.id, (await this.listProjects()).map((project) => project.id));
-    const id = data.project.id;
-    await this.createProject(data.project.name, '', id);
-    await this.saveProject(data.project);
-    for (const entity of data.entities) await this.saveEntity(id, entity);
-    for (const relationship of data.relationships) await this.saveRelationship(id, relationship);
-    for (const source of data.sources) await this.saveSource(id, source);
-    for (const note of data.notes) await this.saveNote(id, note);
-    await this.saveGraphLayout(id, layout);
+    // The main process stages and validates the whole case before it ever touches
+    // `projects/`, so a disk-full write or a crash mid-import can't leave a partial case.
+    const buffer = file instanceof Blob ? await file.arrayBuffer() : file;
+    const id = await this.api.importProjectZip(buffer);
     await this.rebuildIndex(id);
     const workspace = await this.getWorkspace();
     await this.saveWorkspace({ ...workspace, activeProjectId: id });

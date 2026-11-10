@@ -8,6 +8,7 @@ import { ReconBroker } from './recon/broker';
 import { inside, caseDirectory } from './recon/paths';
 import { trustedDocument } from './recon/trusted-renderer';
 import { AgentBroker } from './agent/broker';
+import { transactionalImport, cleanupOrphanedImports } from './importTransaction';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,6 +169,7 @@ app.whenReady().then(() => {
       : defaultTracePath;
 
   ensureDirSync(currentWorkspacePath);
+  cleanupOrphanedImports(currentWorkspacePath);
 
   recon = new ReconBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'),
     localServer: path.join(app.getAppPath(), 'dist-mcp/mcp/kali-server.js'), nodeExecutable: process.execPath });
@@ -253,6 +255,7 @@ function setupIpcHandlers() {
       currentWorkspacePath = result.filePaths[0];
       ensureDirSync(currentWorkspacePath);
       ensureDirSync(path.join(currentWorkspacePath, 'projects'));
+      cleanupOrphanedImports(currentWorkspacePath);
       saveConfig({ workspacePath: currentWorkspacePath });
 
       const wsFile = path.join(currentWorkspacePath, 'workspace.json');
@@ -427,6 +430,19 @@ function setupIpcHandlers() {
     const content = `---\n${dump(proj, { noRefs: true })}---\n\n# ${name}\n\n${description || ''}\n`;
     atomicWriteFileSync(projFile, content);
     return proj;
+  });
+
+  // Projects: Import (atomic — stages in full before the case becomes visible)
+  handle('projects:importZip', async (_event, buffer: ArrayBuffer) => {
+    const projectsDir = path.resolve(currentWorkspacePath, 'projects');
+    ensureDirSync(projectsDir);
+    const existingIds = fs
+      .readdirSync(projectsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    const id = await transactionalImport(currentWorkspacePath, buffer, existingIds);
+    mainWindow?.webContents.send('storage:changed', { type: 'create', targetType: 'project', targetId: id });
+    return id;
   });
 
   // Projects: Save
