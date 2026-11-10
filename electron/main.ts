@@ -9,6 +9,7 @@ import { inside, caseDirectory } from './recon/paths';
 import { trustedDocument } from './recon/trusted-renderer';
 import { AgentBroker } from './agent/broker';
 import { transactionalImport, cleanupOrphanedImports } from './importTransaction';
+import { resolveWorkspacePath } from './workspacePath';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,10 @@ if (profileOverride) {
   fs.mkdirSync(profileOverride, { recursive: true });
   app.setPath('userData', profileOverride);
 }
+
+// A main-process error with no handler would otherwise crash silently or freeze with no window; log it instead.
+process.on('uncaughtException', (err) => console.error('Uncaught exception in main process:', err));
+process.on('unhandledRejection', (reason) => console.error('Unhandled rejection in main process:', reason));
 
 let mainWindow: BrowserWindow | null = null;
 let configPath = '';
@@ -149,55 +154,60 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  configPath = path.join(app.getPath('userData'), 'trace-config.json');
-  const defaultTracePath = workspaceOverride || path.join(app.getPath('documents'), 'trace');
-  const legacyTracePath = path.join(app.getPath('documents'), 'Trace-OSINT-Workspace');
-
-  // Migrate legacy 'Trace-OSINT-Workspace' to 'trace' if needed
   try {
-    if (!workspaceOverride && !fs.existsSync(defaultTracePath) && fs.existsSync(legacyTracePath)) {
-      fs.renameSync(legacyTracePath, defaultTracePath);
+    configPath = path.join(app.getPath('userData'), 'trace-config.json');
+    const defaultTracePath = workspaceOverride || path.join(app.getPath('documents'), 'trace');
+    const legacyTracePath = path.join(app.getPath('documents'), 'Trace-OSINT-Workspace');
+
+    // Migrate legacy 'Trace-OSINT-Workspace' to 'trace' if needed
+    try {
+      if (!workspaceOverride && !fs.existsSync(defaultTracePath) && fs.existsSync(legacyTracePath)) {
+        fs.renameSync(legacyTracePath, defaultTracePath);
+      }
+    } catch (err) {
+      console.error('Failed to migrate legacy directory to trace:', err);
     }
+
+    const initialConfig = workspaceOverride ? {} : loadConfig();
+    // A saved workspace pointer can go stale (removed drive, replaced by a file); never trust it blindly.
+    currentWorkspacePath = resolveWorkspacePath(initialConfig.workspacePath, defaultTracePath);
+
+    ensureDirSync(currentWorkspacePath);
+    cleanupOrphanedImports(currentWorkspacePath);
+
+    recon = new ReconBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'),
+      localServer: path.join(app.getAppPath(), 'dist-mcp/mcp/kali-server.js'), nodeExecutable: process.execPath });
+    app.on('before-quit', () => recon.stop());
+    agent = new AgentBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'), scope: () => recon.config()?.scope ?? [] });
+    app.on('before-quit', () => agent.stop());
+
+    // Set macOS dock icon in development (in packaged app Info.plist sets icon.icns)
+    if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
+      const iconPath = path.join(__dirname, '../build/icon.png');
+      if (fs.existsSync(iconPath)) {
+        try {
+          const img = nativeImage.createFromPath(iconPath);
+          if (!img.isEmpty()) {
+            app.dock.setIcon(img);
+          }
+        } catch {}
+      }
+    }
+
+    setupIpcHandlers();
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
   } catch (err) {
-    console.error('Failed to migrate legacy directory to trace:', err);
+    // Without a usable workspace or IPC layer the app can only hang with no window; fail visibly and exit instead.
+    console.error('Trace failed to start:', err);
+    dialog.showErrorBox('Trace failed to start', err instanceof Error ? err.message : String(err));
+    app.quit();
   }
-
-  const initialConfig = workspaceOverride ? {} : loadConfig();
-  currentWorkspacePath =
-    initialConfig.workspacePath && fs.existsSync(initialConfig.workspacePath)
-      ? initialConfig.workspacePath
-      : defaultTracePath;
-
-  ensureDirSync(currentWorkspacePath);
-  cleanupOrphanedImports(currentWorkspacePath);
-
-  recon = new ReconBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'),
-    localServer: path.join(app.getAppPath(), 'dist-mcp/mcp/kali-server.js'), nodeExecutable: process.execPath });
-  app.on('before-quit', () => recon.stop());
-  agent = new AgentBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'), scope: () => recon.config()?.scope ?? [] });
-  app.on('before-quit', () => agent.stop());
-
-  // Set macOS dock icon in development (in packaged app Info.plist sets icon.icns)
-  if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
-    const iconPath = path.join(__dirname, '../build/icon.png');
-    if (fs.existsSync(iconPath)) {
-      try {
-        const img = nativeImage.createFromPath(iconPath);
-        if (!img.isEmpty()) {
-          app.dock.setIcon(img);
-        }
-      } catch {}
-    }
-  }
-
-  setupIpcHandlers();
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 });
 
 app.on('window-all-closed', () => {
@@ -328,7 +338,9 @@ function setupIpcHandlers() {
     const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (entry.isDirectory()) {
+      if (!entry.isDirectory()) continue;
+      // One unreadable or corrupt case directory must not take the rest of the list down with it.
+      try {
         const projDir = getProjectDir(entry.name);
         const projFile = inside(projDir, path.join(projDir, 'project.md'));
         if (fs.existsSync(projFile)) {
@@ -368,6 +380,8 @@ function setupIpcHandlers() {
             updated_at: stats.mtime.toISOString(),
           });
         }
+      } catch (err) {
+        console.error(`Skipping unreadable case directory "${entry.name}":`, err);
       }
     }
 
