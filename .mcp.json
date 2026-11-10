@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/chrome-devtools.mjs"
+      ]
+    }
+  }
+}

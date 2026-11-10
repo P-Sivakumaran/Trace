@@ -217,3 +217,11 @@ See [account setup and data sharing](docs/chat-agent-setup.md) and
 [the development/verification record](docs/chat-agent-development-plan.md).
 `npm run check:agent-ux` runs the optional native test harness with synthetic
 providers by default. Real account smoke tests require explicit opt-in.
+
+### Modern Web Guidance for contributors
+
+Official web-platform and Chrome-extension skills, a pinned offline guidance CLI,
+and isolated Chrome DevTools MCP are configured for Codex and Claude development.
+See [installation, commands and maintenance](docs/modern-web-guidance.md).
+Run `npm run check:web-guidance`; with Chrome installed, run `npm run check:chrome-mcp`.
+Start a fresh coding session from this repository to discover the new skills.

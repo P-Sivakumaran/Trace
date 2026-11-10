@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { readFileSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const root = fileURLToPath(new URL('..', import.meta.url));
+process.chdir(root);
+const json = path => JSON.parse(readFileSync(path, 'utf8'));
+assert.deepEqual(json('.mwgrc'), { baseline: 'widely', allowOriginTrials: false, allowVolatileFeatures: false });
+const pkg = json('package.json');
+assert.equal(pkg.devDependencies['modern-web-guidance'], '1.0.0');
+assert.equal(pkg.devDependencies['chrome-devtools-mcp'], '1.12.0');
+for (const name of ['modern-web-guidance', 'chrome-extensions']) {
+  assert.equal(realpathSync(`.claude/skills/${name}`), realpathSync(`.agents/skills/${name}`));
+  assert.ok(readFileSync(`.agents/skills/${name}/SKILL.md`, 'utf8').length > 1000);
+}
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES']) assert.ok(readFileSync(`.agents/skills/${name}`, 'utf8').length > 100);
+const run = (...args) => execFileSync(process.execPath, ['scripts/modern-web.mjs', ...args], { encoding: 'utf8', timeout: 30000 });
+const catalog = JSON.parse(run('list'));
+assert.ok(catalog.length >= 200);
+const results = JSON.parse(run('search', 'accessible dialog'));
+assert.ok(results.some(item => item.id === 'dialog'));
+const output = run('retrieve', 'dialog');
+const saved = output.match(/saved to (.+) to prevent/);
+const guide = saved ? readFileSync(saved[1], 'utf8') : output;
+assert.ok(guide.includes('dialog') && guide.length > 1000);
+assert.ok(readFileSync('scripts/modern-web.mjs', 'utf8').includes("DISABLE_TELEMETRY: '1'"));
+const config = json('.mcp.json').mcpServers['chrome-devtools'];
+assert.deepEqual(config.args, ['scripts/chrome-devtools.mjs']);
+assert.ok(readFileSync('.codex/config.toml', 'utf8').includes('scripts/chrome-devtools.mjs'));
+console.log(`Modern Web Guidance OK: ${catalog.length} eligible guides, search/retrieve, policy, discovery and pinned dependencies.`);

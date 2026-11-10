@@ -13,6 +13,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:web-guidance
       - run: npm test
       - run: npm run lint
       - run: npm run build

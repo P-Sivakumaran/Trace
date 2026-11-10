@@ -21,7 +21,10 @@
     "mcp:kali": "node dist-mcp/mcp/kali-server.js",
     "mcp:case": "node dist-mcp/mcp/trace-server.js",
     "check:ux": "node scripts/check-recon-ux.mjs",
-    "check:agent-ux": "node scripts/check-agent-ux.mjs"
+    "check:agent-ux": "node scripts/check-agent-ux.mjs",
+    "web:guidance": "node scripts/modern-web.mjs",
+    "check:web-guidance": "node scripts/check-web-guidance.mjs",
+    "check:chrome-mcp": "node scripts/check-chrome-mcp.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
@@ -52,8 +55,10 @@
     "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.1",
+    "chrome-devtools-mcp": "1.12.0",
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3",
+    "modern-web-guidance": "1.0.0",
     "oxlint": "^1.81.0",
     "postcss": "^8.5.30",
     "tailwindcss": "^4.3.3",
