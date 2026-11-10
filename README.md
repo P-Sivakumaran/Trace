@@ -1,12 +1,22 @@
-# Trace — Local-First OSINT Investigation & Link Analysis
-
-<p align="center">
+<div align="center">
   <img src="./build/icon.png" alt="Trace Logo" width="128" height="128" />
-</p>
-
-<p align="center">
+  
+  <h1>Trace</h1>
+  <h3>Local-First OSINT Investigation & Link Analysis</h3>
+  
   <strong>Trace</strong> is a desktop workbench for OSINT analysts, researchers and investigators. Map entities and relationships on a force-directed graph, attach evidence, and keep everything as plain Markdown files on your own machine.
-</p>
+
+
+  <a href="https://github.com/dlxarl/Trace/releases">
+    <img src="https://img.shields.io/github/v/release/dlxarl/Trace?include_prereleases&label=release" alt="Release">
+  </a>
+  <a href="https://github.com/dlxarl/Trace/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/dlxarl/Trace" alt="License">
+  </a>
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-blue" alt="Platforms">
+  <img src="https://img.shields.io/badge/Electron-desktop%20app-47848F?logo=electron&logoColor=white" alt="Electron">
+</div>
+
 
 ---
 <p align="center">
