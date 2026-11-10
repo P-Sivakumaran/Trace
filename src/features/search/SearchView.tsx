@@ -112,7 +112,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               <div
                 key={item.id}
                 onClick={() => onSelectResult(item)}
-                className="px-4 py-[5px] border-b border-[var(--t-border-subtle)] hover:bg-[var(--t-hover)] cursor-default"
+                className="px-4 py-[5px] border-b border-[var(--t-border-subtle)] hover:bg-[var(--t-hover)] cursor-pointer"
               >
                 <div className="flex items-baseline gap-2 min-w-0">
                   <span className="text-zinc-100 truncate">{item.title}</span>

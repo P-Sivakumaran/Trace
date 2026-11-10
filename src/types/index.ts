@@ -9,7 +9,8 @@ declare module 'react' {
 
 declare global {
   const __APP_VERSION__: string;
-  const __BUILD_HASH__: string;
+  /** `YYYYMMDDHHMMSS-<git commit>`, embedded at build time. */
+  const __BUILD_ID__: string;
 }
 
 export type EntityType =
@@ -25,6 +26,11 @@ export type EntityType =
   | 'location'
   | 'document'
   | 'event'
+  | 'computer'
+  | 'laptop'
+  | 'smartphone'
+  | 'server'
+  | 'network_interface'
   | 'custom';
 
 export const ENTITY_TYPES: { type: EntityType; label: string; color: string; iconName: string }[] = [
@@ -36,10 +42,15 @@ export const ENTITY_TYPES: { type: EntityType; label: string; color: string; ico
   { type: 'account', label: 'Account', color: '#9a86b0', iconName: 'Fingerprint' },
   { type: 'email', label: 'Email Address', color: '#b7a165', iconName: 'Mail' },
   { type: 'phone', label: 'Phone Number', color: '#a8946a', iconName: 'Phone' },
-  { type: 'ip', label: 'IP Address', color: '#5b7fae', iconName: 'Server' },
+  { type: 'ip', label: 'IP Address', color: '#5b7fae', iconName: 'Binary' },
   { type: 'location', label: 'Location', color: '#6f9a68', iconName: 'MapPin' },
   { type: 'document', label: 'Document', color: '#8b8f98', iconName: 'FileText' },
   { type: 'event', label: 'Event', color: '#a99b5e', iconName: 'Calendar' },
+  { type: 'computer', label: 'Computer', color: '#6d8fa6', iconName: 'Monitor' },
+  { type: 'laptop', label: 'Laptop', color: '#6a8aa0', iconName: 'Laptop' },
+  { type: 'smartphone', label: 'Smartphone', color: '#7a92aa', iconName: 'Smartphone' },
+  { type: 'server', label: 'Server', color: '#5f8796', iconName: 'Server' },
+  { type: 'network_interface', label: 'Network Interface', color: '#5d9097', iconName: 'EthernetPort' },
   { type: 'custom', label: 'Custom', color: '#9b7f97', iconName: 'Boxes' },
 ];
 
@@ -62,6 +73,27 @@ export const RELATIONSHIP_STATUSES: {
   { status: 'candidate', label: 'Candidate', color: '#7c8088', borderStyle: 'dotted' },
   { status: 'rejected', label: 'Rejected', color: '#c97c7c', borderStyle: 'dashed' },
 ];
+
+/**
+ * Evidence class: how an investigator should read a relationship.
+ * Derived from the verification status so existing projects need no migration.
+ *  - observed:   backed by an observed fact (confirmed / supported)
+ *  - hypothesis: plausible but not yet established (unverified / candidate)
+ *  - disproven:  checked and found false (rejected)
+ */
+export type EvidenceClass = 'observed' | 'hypothesis' | 'disproven';
+
+export const EVIDENCE_CLASSES: { cls: EvidenceClass; label: string; statuses: RelationshipStatus[] }[] = [
+  { cls: 'observed', label: 'Observed fact', statuses: ['confirmed', 'supported'] },
+  { cls: 'hypothesis', label: 'Hypothesis', statuses: ['unverified', 'candidate'] },
+  { cls: 'disproven', label: 'Disproven', statuses: ['rejected'] },
+];
+
+export function evidenceClassOf(status: RelationshipStatus | string | undefined): EvidenceClass {
+  if (status === 'confirmed' || status === 'supported') return 'observed';
+  if (status === 'rejected') return 'disproven';
+  return 'hypothesis';
+}
 
 export type SourceType =
   | 'webpage'
@@ -242,6 +274,26 @@ export interface ProjectData {
   notes: Note[];
 }
 
+/** How much space TRACE's data takes (desktop: files on disk; web: browser storage). */
+export interface StorageUsage {
+  kind: 'disk' | 'browser';
+  location: string;
+  projects: { id: string; name: string; bytes: number; files?: number }[];
+  projectsBytes: number;
+  /** Cases removed from TRACE but kept on disk (desktop only). */
+  removedBytes: number;
+  toolsBytes: number;
+  pythonBytes: number;
+  /** Everything above added up. */
+  totalBytes: number;
+  /** Browser only: bytes used / available according to the browser. */
+  browserUsageBytes?: number;
+  browserQuotaBytes?: number;
+}
+
+/** What happens to a case's files when it is removed (desktop). */
+export type ProjectRemoveMode = 'delete' | 'keep' | 'trash';
+
 export interface GraphLayout {
   positions: Record<string, { x: number; y: number }>;
 }
@@ -265,6 +317,7 @@ export type TabType =
   | 'source'
   | 'note'
   | 'search'
+  | 'tools'
   | 'settings';
 
 export interface Tab {

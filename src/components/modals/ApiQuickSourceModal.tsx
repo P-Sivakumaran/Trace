@@ -19,6 +19,7 @@ import {
   Settings,
   ChevronDown,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface ApiQuickSourceModalProps {
   isOpen: boolean;
@@ -286,7 +287,7 @@ export const ApiQuickSourceModal: React.FC<ApiQuickSourceModalProps> = ({
         <div className="p-4 border-b border-obsidian-border bg-[var(--t-raised)] space-y-3">
           <div className="flex items-center space-x-2">
             {/* Method Select */}
-            <select
+            <Select
               value={method}
               onChange={(e) => setMethod(e.target.value as any)}
               className={`px-3 py-2 rounded text-xs font-bold font-mono tracking-wider border cursor-pointer focus:outline-none transition-colors ${
@@ -306,7 +307,7 @@ export const ApiQuickSourceModal: React.FC<ApiQuickSourceModalProps> = ({
                   {m}
                 </option>
               ))}
-            </select>
+            </Select>
 
             {/* URL Input */}
             <input
@@ -485,7 +486,7 @@ export const ApiQuickSourceModal: React.FC<ApiQuickSourceModalProps> = ({
                     {/* Entity Select */}
                     <div className="col-span-1 md:col-span-1">
                       <label className="block text-[11px] text-zinc-500 mb-1">Target Entity</label>
-                      <select
+                      <Select
                         value={selectedEntityId}
                         onChange={(e) => setSelectedEntityId(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-white focus:outline-none focus:border-[var(--t-accent)]"
@@ -495,13 +496,13 @@ export const ApiQuickSourceModal: React.FC<ApiQuickSourceModalProps> = ({
                             {ent.name} ({ent.type})
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
 
                     {/* Mode Select */}
                     <div className="col-span-1 md:col-span-1">
                       <label className="block text-[11px] text-zinc-500 mb-1">Action</label>
-                      <select
+                      <Select
                         value={linkMode}
                         onChange={(e) => setLinkMode(e.target.value as any)}
                         className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-white focus:outline-none focus:border-[var(--t-accent)]"
@@ -509,7 +510,7 @@ export const ApiQuickSourceModal: React.FC<ApiQuickSourceModalProps> = ({
                         <option value="source">Attach as Project Source</option>
                         <option value="note">Save as Investigation Note</option>
                         <option value="attribute">Set Entity Attribute</option>
-                      </select>
+                      </Select>
                     </div>
 
                     {/* Action Button */}

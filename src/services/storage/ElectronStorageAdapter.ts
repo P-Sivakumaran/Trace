@@ -5,14 +5,17 @@ import {
   Note,
   Project,
   ProjectData,
+  ProjectRemoveMode,
   ProjectSummary,
   Relationship,
   SearchResult,
   Source,
   StorageChangeEvent,
+  StorageUsage,
   Workspace,
 } from '@/types';
 import { IStorageService } from './IStorageService';
+import { applyImportTarget, readCaseBundle, zipToBundleFiles, type CaseBundle, type ImportedCase } from '../import/caseBundle';
 import {
   parseEntityFile,
   parseNoteFile,
@@ -31,6 +34,12 @@ declare global {
   interface Window {
     electronAPI?: {
       isDesktop: boolean;
+      pickImport?: (mode: 'any' | 'zip' | 'folder') => Promise<
+        | { ok: true; kind: 'zip'; name: string; data: Uint8Array }
+        | { ok: true; kind: 'folder'; name: string; files: { path: string; text: string }[] }
+        | { ok: false; error: string }
+        | null
+      >;
       getWorkspace: () => Promise<Workspace>;
       saveWorkspace: (ws: Workspace) => Promise<void>;
       listProjects: () => Promise<ProjectSummary[]>;
@@ -43,7 +52,8 @@ declare global {
         notes: { id: string; raw: string }[];
       } | null>;
       saveProject: (raw: string) => Promise<void>;
-      deleteProject: (id: string) => Promise<void>;
+      deleteProject: (id: string, mode?: 'delete' | 'keep' | 'trash') => Promise<{ movedTo?: string } | void>;
+      getStorageUsage?: () => Promise<StorageUsage>;
       saveEntity: (projectId: string, entityId: string, raw: string) => Promise<void>;
       deleteEntity: (projectId: string, entityId: string) => Promise<{ removedRelIds?: string[] } | void>;
       saveRelationship: (projectId: string, relId: string, raw: string) => Promise<void>;
@@ -72,6 +82,34 @@ declare global {
         durationMs?: number;
       }>;
       getVersion?: () => Promise<string>;
+      tools?: {
+        status: () => Promise<{
+          python: { found: boolean; command?: string; version?: string; managed?: boolean };
+          tools: { id: string; installed: boolean; version?: string; installedAt?: string }[];
+          platform: string;
+        }>;
+        install: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        installPython: () => Promise<{ ok: boolean; error?: string }>;
+        uninstall: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        run: (id: string, input: string, runId: string) => Promise<
+          | { ok: true; value: string; exitCode: number | null; stdout: string; stderrTail: string; timedOut: boolean; cancelled: boolean; durationMs: number; startedAt: string }
+          | { ok: false; error: string }
+        >;
+        cancel: (runId: string) => Promise<boolean>;
+        onLog: (cb: (e: { runId: string; line: string; stream: string }) => void) => () => void;
+      };
+      mcp?: {
+        status: () => Promise<{
+          enabled: boolean;
+          available: boolean;
+          command: string;
+          args: string[];
+          env: Record<string, string>;
+          workspacePath: string;
+          configPath: string;
+        }>;
+        setEnabled: (enabled: boolean) => Promise<boolean>;
+      };
     };
   }
 }
@@ -137,8 +175,13 @@ export class ElectronStorageAdapter implements IStorageService {
     return this.api.saveProject(raw);
   }
 
-  async deleteProject(id: string): Promise<void> {
-    return this.api.deleteProject(id);
+  async deleteProject(id: string, mode?: ProjectRemoveMode): Promise<void> {
+    await this.api.deleteProject(id, mode);
+  }
+
+  async getStorageUsage(): Promise<StorageUsage> {
+    if (!this.api.getStorageUsage) throw new Error('Storage usage is not available');
+    return this.api.getStorageUsage();
   }
 
   async saveEntity(projectId: string, entity: Entity): Promise<void> {
@@ -242,78 +285,24 @@ export class ElectronStorageAdapter implements IStorageService {
   }
 
   async importProjectZip(file: File | ArrayBuffer): Promise<string> {
-    const zip = new JSZip();
-    const data = file instanceof File ? await file.arrayBuffer() : file;
-    await zip.loadAsync(data);
+    const bundle = await readCaseBundle(await zipToBundleFiles(file instanceof File ? await file.arrayBuffer() : file), file instanceof File ? file.name.replace(/\.zip$/i, '') : 'archive');
+    return (await this.importProjectBundle(bundle)).id;
+  }
 
-    let projectFile: JSZip.JSZipObject | null = null;
-    let basePrefix = '';
-
-    zip.forEach((relativePath, entry) => {
-      if (entry.name.endsWith('project.md') && !projectFile) {
-        projectFile = entry;
-        basePrefix = relativePath.slice(0, -'project.md'.length);
-      }
-    });
-
-    if (!projectFile) {
-      throw new Error('Invalid project zip: project.md not found');
-    }
-
-    const projectText = await (projectFile as JSZip.JSZipObject).async('string');
-    const parsedProject = parseProjectFile(projectText, `imported-${Date.now()}`);
-
-    await this.createProject(parsedProject.name, (parsedProject as any).description || '', parsedProject.id);
-    await this.saveProject(parsedProject);
-
-    // Entities
-    const entEntries = zip.file(new RegExp(`^${basePrefix}entities/.*\\.md$`));
-    for (const entry of entEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'ent';
-      const ent = parseEntityFile(raw, filename);
-      await this.saveEntity(parsedProject.id, ent);
-    }
-
-    // Relationships
-    const relEntries = zip.file(new RegExp(`^${basePrefix}relationships/.*\\.md$`));
-    for (const entry of relEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'rel';
-      const rel = parseRelationshipFile(raw, filename);
-      await this.saveRelationship(parsedProject.id, rel);
-    }
-
-    // Sources
-    const srcEntries = zip.file(new RegExp(`^${basePrefix}sources/.*\\.md$`));
-    for (const entry of srcEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'src';
-      const src = parseSourceFile(raw, filename);
-      await this.saveSource(parsedProject.id, src);
-    }
-
-    // Notes
-    const noteEntries = zip.file(new RegExp(`^${basePrefix}notes/.*\\.md$`));
-    for (const entry of noteEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'note';
-      const note = parseNoteFile(raw, filename);
-      await this.saveNote(parsedProject.id, note);
-    }
-
-    // Layout
-    const layoutEntry = zip.file(`${basePrefix}graph-layout.json`);
-    if (layoutEntry) {
-      try {
-        const layoutRaw = await layoutEntry.async('string');
-        const layout = JSON.parse(layoutRaw);
-        await this.saveGraphLayout(parsedProject.id, layout);
-      } catch {}
-    }
-
-    await this.rebuildIndex(parsedProject.id);
-    return parsedProject.id;
+  /** Stores an incoming case as a new project; an existing id is never overwritten. */
+  async importProjectBundle(incoming: CaseBundle): Promise<ImportedCase> {
+    const existing = (await this.listProjects()).map((p) => p.id);
+    const { bundle, summary } = applyImportTarget(incoming, existing);
+    const { project, entities, relationships, sources, notes } = bundle.data;
+    await this.createProject(project.name, '', project.id);
+    await this.saveProject(project);
+    for (const e of entities) await this.saveEntity(project.id, e);
+    for (const r of relationships) await this.saveRelationship(project.id, r);
+    for (const s of sources) await this.saveSource(project.id, s);
+    for (const n of notes) await this.saveNote(project.id, n);
+    if (Object.keys(bundle.layout.positions).length > 0) await this.saveGraphLayout(project.id, bundle.layout);
+    await this.rebuildIndex(project.id);
+    return summary;
   }
 
   async openInExplorer(projectId?: string): Promise<boolean> {

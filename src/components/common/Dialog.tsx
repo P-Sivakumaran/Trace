@@ -8,12 +8,14 @@ interface DialogProps {
   /** short context line shown after the title */
   subtitle?: React.ReactNode;
   width?: number;
+  /** Stacking level; raise above other dialogs (e.g. a confirmation opened from Settings). */
+  zIndex?: number;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }
 
 /** Standard modal dialog: 32px title bar, scrolling body, optional footer. */
-export const Dialog: React.FC<DialogProps> = ({ isOpen, onClose, title, subtitle, width = 520, footer, children }) => {
+export const Dialog: React.FC<DialogProps> = ({ isOpen, onClose, title, subtitle, width = 520, zIndex = 70, footer, children }) => {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -23,7 +25,7 @@ export const Dialog: React.FC<DialogProps> = ({ isOpen, onClose, title, subtitle
 
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] p-4 bg-black/55" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 flex items-start justify-center pt-[12vh] p-4 bg-black/55" style={{ zIndex }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         role="dialog"
         aria-modal="true"

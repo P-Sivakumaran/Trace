@@ -25,6 +25,8 @@ import {
   Trash2,
   Download,
   Upload,
+  FileInput,
+  Blocks,
   RefreshCw,
   ExternalLink,
   Copy,
@@ -49,6 +51,7 @@ import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface LeftSidebarProps {
   isOpen: boolean;
@@ -69,6 +72,7 @@ interface LeftSidebarProps {
   onCreateNoteModal: () => void;
   onExportZip: () => void;
   onImportZip: () => void;
+  onImportData?: () => void;
   onRebuildIndex: () => void;
   onDeleteEntity?: (id: string) => void;
   onDeleteRelationship?: (id: string) => void;
@@ -144,6 +148,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onCreateNoteModal,
   onExportZip,
   onImportZip,
+  onImportData,
   onRebuildIndex,
   onDeleteEntity,
   onDeleteRelationship,
@@ -398,7 +403,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { id: 'links', label: 'Links', count: projectData?.relationships.length || 0 },
     { id: 'sources', label: 'Sources', count: projectData?.sources.length || 0 },
     { id: 'notes', label: 'Notes', count: projectData?.notes.length || 0 },
-    { id: 'tools', label: 'Tools', count: quickSources.length },
+    { id: 'tools', label: 'Bookmarks', count: quickSources.length },
   ];
 
   const handleAdd = () => {
@@ -408,7 +413,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     else if (view === 'notes') onCreateNoteModal();
     else setNewQuickSourceOpen(true);
   };
-  const addLabel = { entities: 'New entity', links: 'New relationship', sources: 'New source', notes: 'New note', tools: 'Add tool / API' }[view];
+  const addLabel = { entities: 'New entity', links: 'New relationship', sources: 'New source', notes: 'New note', tools: 'Add bookmark / API' }[view];
 
   const Empty: React.FC<{ text: string }> = ({ text }) => (
     <div className="px-3 py-3 text-[11.5px] text-zinc-600">{q ? 'No matches' : text}</div>
@@ -438,7 +443,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         <RailButton active={activeTabType === 'search'} title="Full-text search  (⌘F)" onClick={() => onOpenTab('search', undefined, 'Full-Text Search')}>
           <Search />
         </RailButton>
+        <RailButton active={activeTabType === 'tools'} title={isDesktop ? 'Tools — run OSINT tools, marketplace, MCP' : 'Tools — OSINT tool marketplace'} onClick={() => onOpenTab('tools', undefined, 'Tools')}>
+          <Blocks />
+        </RailButton>
         <div className="flex-1" />
+        {onImportData && activeProjectId && (
+          <RailButton title="Import tool output (SpiderFoot, CSV, indicator list, JSON)" onClick={onImportData}>
+            <FileInput />
+          </RailButton>
+        )}
         <RailButton title="Import case archive (.zip)" onClick={onImportZip}>
           <Upload />
         </RailButton>
@@ -913,7 +926,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
               <div>
                 <label className="block text-[11px] text-zinc-500 mb-1">Type</label>
-                <select
+                <Select
                   value={newQsType}
                   onChange={(e) => setNewQsType(e.target.value)}
                   className="t-input cursor-pointer"
@@ -924,7 +937,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   <option value="archive">Archive</option>
                   <option value="social">Social Media</option>
                   <option value="api">API Endpoint</option>
-                </select>
+                </Select>
               </div>
 
               {/* API Specific Fields */}
@@ -933,7 +946,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   <div className="flex items-center space-x-2">
                     <div className="w-1/3">
                       <label className="block text-[10px] text-zinc-500 mb-1 font-medium">Method</label>
-                      <select
+                      <Select
                         value={newQsMethod}
                         onChange={(e) => setNewQsMethod(e.target.value as any)}
                         className="w-full px-2 py-1 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs font-mono font-bold text-white focus:outline-none focus:border-[var(--t-accent)]"
@@ -943,7 +956,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         <option value="PUT">PUT</option>
                         <option value="PATCH">PATCH</option>
                         <option value="DELETE">DELETE</option>
-                      </select>
+                      </Select>
                     </div>
 
                     <div className="w-2/3">

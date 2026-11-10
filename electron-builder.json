@@ -9,6 +9,15 @@
     "dist-electron/**/*",
     "package.json"
   ],
+  "extraResources": [
+    {
+      "from": "dist-mcp",
+      "to": "mcp",
+      "filter": [
+        "trace-mcp.mjs"
+      ]
+    }
+  ],
   "afterPack": "./build/afterPack.cjs",
   "mac": {
     "icon": "build/icon.icns",

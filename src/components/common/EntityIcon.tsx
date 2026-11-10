@@ -12,6 +12,11 @@ import {
   FileText,
   Calendar,
   Boxes,
+  Binary,
+  Monitor,
+  Laptop,
+  Smartphone,
+  EthernetPort,
 } from 'lucide-react';
 import { EntityType, ENTITY_TYPES } from '@/types';
 
@@ -46,7 +51,17 @@ export const EntityIcon: React.FC<EntityIconProps> = ({
     case 'phone':
       return <Phone className={className} size={size} strokeWidth={strokeWidth} />;
     case 'ip':
+      return <Binary className={className} size={size} strokeWidth={strokeWidth} />;
+    case 'computer':
+      return <Monitor className={className} size={size} strokeWidth={strokeWidth} />;
+    case 'laptop':
+      return <Laptop className={className} size={size} strokeWidth={strokeWidth} />;
+    case 'smartphone':
+      return <Smartphone className={className} size={size} strokeWidth={strokeWidth} />;
+    case 'server':
       return <Server className={className} size={size} strokeWidth={strokeWidth} />;
+    case 'network_interface':
+      return <EthernetPort className={className} size={size} strokeWidth={strokeWidth} />;
     case 'location':
       return <MapPin className={className} size={size} strokeWidth={strokeWidth} />;
     case 'document':

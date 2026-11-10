@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electro
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { ToolManager } from './tools';
+import { readImportSelection } from './caseFiles';
+import { collectUsage, removeProjectDir, type RemoveMode } from './diskUsage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,8 +12,15 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let configPath = '';
 let currentWorkspacePath = '';
+let toolManager: ToolManager | null = null;
 
-function loadConfig(): { workspacePath?: string } {
+interface AppConfig {
+  workspacePath?: string;
+  /** Read-only MCP server access, toggled in Tools. Off by default. */
+  mcpEnabled?: boolean;
+}
+
+function loadConfig(): AppConfig {
   try {
     if (configPath && fs.existsSync(configPath)) {
       return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -19,11 +29,12 @@ function loadConfig(): { workspacePath?: string } {
   return {};
 }
 
-function saveConfig(cfg: { workspacePath?: string }) {
+function saveConfig(patch: AppConfig) {
   if (!configPath) return;
   try {
     ensureDirSync(path.dirname(configPath));
-    atomicWriteFileSync(configPath, JSON.stringify(cfg, null, 2));
+    // Merge so unrelated settings (e.g. mcpEnabled) are never dropped.
+    atomicWriteFileSync(configPath, JSON.stringify({ ...loadConfig(), ...patch }, null, 2));
   } catch (err) {
     console.error('Failed to save config:', err);
   }
@@ -158,6 +169,7 @@ app.whenReady().then(() => {
     }
   }
 
+  toolManager = new ToolManager(path.join(app.getPath('userData'), 'tools'));
   setupIpcHandlers();
   createWindow();
 
@@ -167,6 +179,14 @@ app.whenReady().then(() => {
     }
   });
 });
+
+app.on('before-quit', () => toolManager?.cancelAll());
+
+function mcpScriptPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'mcp', 'trace-mcp.mjs')
+    : path.join(__dirname, '../dist-mcp/trace-mcp.mjs');
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -369,11 +389,35 @@ function setupIpcHandlers() {
   });
 
   // Projects: Delete
-  ipcMain.handle('projects:delete', async (_, id: string) => {
-    const projDir = getProjectDir(id);
-    if (fs.existsSync(projDir)) {
-      fs.rmSync(projDir, { recursive: true, force: true });
+  // mode: 'delete' (permanent, default), 'keep' (moved to <workspace>/removed, files kept), 'trash' (system Trash)
+  ipcMain.handle('projects:delete', async (_, id: string, mode?: RemoveMode) => {
+    const m: RemoveMode = mode === 'keep' || mode === 'trash' ? mode : 'delete';
+    return removeProjectDir(currentWorkspacePath, getProjectDir(id), m, (p) => shell.trashItem(p));
+  });
+
+  // Disk usage of cases, tools and the portable Python
+  ipcMain.handle('storage:usage', async () => {
+    const names: Record<string, string> = {};
+    const projectsDir = path.join(currentWorkspacePath, 'projects');
+    try {
+      for (const e of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        try {
+          const m = fs.readFileSync(path.join(projectsDir, e.name, 'project.md'), 'utf-8').match(/^name:\s*["']?([^"'\n\r]+)["']?/m);
+          if (m) names[e.name] = m[1].trim();
+        } catch {
+          /* unreadable project.md */
+        }
+      }
+    } catch {
+      /* no projects */
     }
+    return collectUsage({
+      workspacePath: currentWorkspacePath,
+      toolsDir: path.join(app.getPath('userData'), 'tools'),
+      pythonDir: path.join(app.getPath('userData'), 'python'),
+      names,
+    });
   });
 
   // Entities: Save
@@ -516,6 +560,68 @@ function setupIpcHandlers() {
     }
     await shell.openPath(targetPath);
     return true;
+  });
+
+  // Import investigation: native picker for a case .zip, a case folder or its project.md.
+  // macOS can pick files and folders in one dialog; Windows/Linux cannot, so the
+  // renderer asks for 'zip' or 'folder' explicitly there.
+  ipcMain.handle('import:pick', async (_, mode: 'any' | 'zip' | 'folder') => {
+    const isMac = process.platform === 'darwin';
+    const properties: ('openFile' | 'openDirectory')[] =
+      mode === 'folder' ? ['openDirectory'] : mode === 'zip' ? ['openFile'] : isMac ? ['openFile', 'openDirectory'] : ['openFile'];
+    const filters =
+      mode === 'zip' ? [{ name: 'TRACE case archive', extensions: ['zip'] }]
+      : mode === 'any' ? [{ name: 'Investigation (.zip, project.md)', extensions: ['zip', 'md'] }]
+      : undefined;
+    const res = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import investigation',
+      properties,
+      filters: mode === 'folder' ? undefined : filters,
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return readImportSelection(res.filePaths[0]);
+  });
+
+  // External OSINT tools (catalog only; see electron/tools.ts)
+  ipcMain.handle('tools:status', async () => ({
+    python: await toolManager!.findPython(),
+    tools: toolManager!.status(),
+    platform: process.platform,
+  }));
+  ipcMain.handle('tools:install', async (event, id: string) => {
+    const send = (line: string, stream: string) => event.sender.send('tools:log', { runId: `install:${id}`, line, stream });
+    return toolManager!.install(String(id), send);
+  });
+  ipcMain.handle('tools:installPython', async (event) => {
+    const send = (line: string, stream: string) => event.sender.send('tools:log', { runId: 'install:python', line, stream });
+    return toolManager!.installPython(send);
+  });
+  ipcMain.handle('tools:uninstall', async (_, id: string) => toolManager!.uninstall(String(id)));
+  ipcMain.handle('tools:run', async (event, req: { id: string; input: string; runId: string }) => {
+    const runId = String(req?.runId || '').slice(0, 64);
+    if (!/^[a-zA-Z0-9_-]+$/.test(runId)) return { ok: false, error: 'Invalid run id' };
+    const send = (line: string, stream: string) => event.sender.send('tools:log', { runId, line, stream });
+    return toolManager!.run(String(req.id), String(req.input ?? ''), runId, send);
+  });
+  ipcMain.handle('tools:cancel', async (_, runId: string) => toolManager!.cancel(String(runId)));
+
+  // Read-only MCP server: on/off switch + launch details for MCP clients.
+  // The bundled server is executed by this app's own binary in Node mode.
+  ipcMain.handle('mcp:status', async () => {
+    const script = mcpScriptPath();
+    return {
+      enabled: loadConfig().mcpEnabled === true,
+      available: fs.existsSync(script),
+      command: process.execPath,
+      args: [script],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+      workspacePath: currentWorkspacePath,
+      configPath,
+    };
+  });
+  ipcMain.handle('mcp:setEnabled', async (_, enabled: boolean) => {
+    saveConfig({ mcpEnabled: enabled === true });
+    return loadConfig().mcpEnabled === true;
   });
 
   // Window State & Platform

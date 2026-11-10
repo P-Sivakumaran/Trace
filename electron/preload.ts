@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('projects:create', { name, description, id }),
   getProject: (id: string) => ipcRenderer.invoke('projects:get', id),
   saveProject: (raw: string) => ipcRenderer.invoke('projects:save', raw),
-  deleteProject: (id: string) => ipcRenderer.invoke('projects:delete', id),
+  deleteProject: (id: string, mode?: 'delete' | 'keep' | 'trash') => ipcRenderer.invoke('projects:delete', id, mode),
+  getStorageUsage: () => ipcRenderer.invoke('storage:usage'),
 
   // Entities
   saveEntity: (projectId: string, entityId: string, raw: string) =>
@@ -86,4 +87,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App version
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // Import investigation (native dialog)
+  pickImport: (mode: 'any' | 'zip' | 'folder') => ipcRenderer.invoke('import:pick', mode),
+
+  // External tools (marketplace)
+  tools: {
+    status: () => ipcRenderer.invoke('tools:status'),
+    install: (id: string) => ipcRenderer.invoke('tools:install', id),
+    installPython: () => ipcRenderer.invoke('tools:installPython'),
+    uninstall: (id: string) => ipcRenderer.invoke('tools:uninstall', id),
+    run: (id: string, input: string, runId: string) => ipcRenderer.invoke('tools:run', { id, input, runId }),
+    cancel: (runId: string) => ipcRenderer.invoke('tools:cancel', runId),
+    onLog: (cb: (e: { runId: string; line: string; stream: string }) => void) => {
+      const handler = (_: unknown, e: { runId: string; line: string; stream: string }) => cb(e);
+      ipcRenderer.on('tools:log', handler);
+      return () => ipcRenderer.removeListener('tools:log', handler);
+    },
+  },
+
+  // Read-only MCP server switch
+  mcp: {
+    status: () => ipcRenderer.invoke('mcp:status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('mcp:setEnabled', enabled),
+  },
 });

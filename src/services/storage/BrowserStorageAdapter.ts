@@ -5,11 +5,13 @@ import {
   Note,
   Project,
   ProjectData,
+  ProjectRemoveMode,
   ProjectSummary,
   Relationship,
   SearchResult,
   Source,
   StorageChangeEvent,
+  StorageUsage,
   Workspace,
 } from '@/types';
 import { IStorageService } from './IStorageService';
@@ -27,6 +29,7 @@ import {
   serializeSourceFile,
 } from '../markdownParser';
 import { sqliteIndexService } from '../sqliteIndex';
+import { applyImportTarget, readCaseBundle, zipToBundleFiles, type CaseBundle, type ImportedCase } from '../import/caseBundle';
 
 const STORAGE_KEY_PREFIX = 'trace_osint_';
 const KEY_WORKSPACE = `${STORAGE_KEY_PREFIX}workspace`;
@@ -239,7 +242,49 @@ export class BrowserStorageAdapter implements IStorageService {
     this.notifyListeners({ type: 'update', targetType: 'project', targetId: project.id });
   }
 
-  async deleteProject(id: string): Promise<void> {
+  async getStorageUsage(): Promise<StorageUsage> {
+    await this.ensureInitialized();
+    // localStorage stores UTF-16: two bytes per character, keys included.
+    const bytesOf = (key: string) => (key.length + (localStorage.getItem(key) ?? '').length) * 2;
+    const projects: StorageUsage['projects'] = [];
+    let other = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith(KEY_PROJECT_PREFIX)) {
+        const id = key.substring(KEY_PROJECT_PREFIX.length);
+        const layout = localStorage.getItem(`${KEY_GRAPH_PREFIX}${id}`) ? bytesOf(`${KEY_GRAPH_PREFIX}${id}`) : 0;
+        projects.push({ id, name: this.loadProjectDataFromStorage(id)?.project.name || id, bytes: bytesOf(key) + layout });
+      } else if (!key.startsWith(KEY_GRAPH_PREFIX)) {
+        other += bytesOf(key);
+      }
+    }
+    projects.sort((a, b) => b.bytes - a.bytes);
+    const projectsBytes = projects.reduce((n, p) => n + p.bytes, 0);
+    let browserUsageBytes: number | undefined;
+    let browserQuotaBytes: number | undefined;
+    try {
+      const est = await navigator.storage?.estimate?.();
+      browserUsageBytes = est?.usage;
+      browserQuotaBytes = est?.quota;
+    } catch {
+      /* estimate unavailable */
+    }
+    return {
+      kind: 'browser',
+      location: 'Browser local storage',
+      projects,
+      projectsBytes,
+      removedBytes: 0,
+      toolsBytes: 0,
+      pythonBytes: 0,
+      totalBytes: projectsBytes + other,
+      browserUsageBytes,
+      browserQuotaBytes,
+    };
+  }
+
+  async deleteProject(id: string, _mode?: ProjectRemoveMode): Promise<void> {
     localStorage.removeItem(`${KEY_PROJECT_PREFIX}${id}`);
     localStorage.removeItem(`${KEY_GRAPH_PREFIX}${id}`);
 
@@ -457,94 +502,28 @@ export class BrowserStorageAdapter implements IStorageService {
   }
 
   async importProjectZip(file: File | ArrayBuffer): Promise<string> {
-    const zip = await JSZip.loadAsync(file);
+    const bundle = await readCaseBundle(await zipToBundleFiles(file), file instanceof File ? file.name.replace(/\.zip$/i, '') : 'archive');
+    return (await this.importProjectBundle(bundle)).id;
+  }
 
-    // Find project.md
-    let projectFile: JSZip.JSZipObject | null = null;
-    let basePrefix = '';
-
-    zip.forEach((relativePath, entry) => {
-      if (entry.name.endsWith('project.md') && !projectFile) {
-        projectFile = entry;
-        basePrefix = relativePath.slice(0, -'project.md'.length);
-      }
-    });
-
-    if (!projectFile) {
-      throw new Error('Invalid project zip: project.md not found');
-    }
-
-    const projectText = await (projectFile as JSZip.JSZipObject).async('string');
-    const parsedProject = parseProjectFile(projectText, `imported-${Date.now()}`);
-
-    const entities: Entity[] = [];
-    const relationships: Relationship[] = [];
-    const sources: Source[] = [];
-    const notes: Note[] = [];
-    let layout: GraphLayout = { positions: {} };
-
-    // Load entities
-    const entEntries = zip.file(new RegExp(`^${basePrefix}entities/.*\\.md$`));
-    for (const entry of entEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'ent';
-      entities.push(parseEntityFile(raw, filename));
-    }
-
-    // Load relationships
-    const relEntries = zip.file(new RegExp(`^${basePrefix}relationships/.*\\.md$`));
-    for (const entry of relEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'rel';
-      relationships.push(parseRelationshipFile(raw, filename));
-    }
-
-    // Load sources
-    const srcEntries = zip.file(new RegExp(`^${basePrefix}sources/.*\\.md$`));
-    for (const entry of srcEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'src';
-      sources.push(parseSourceFile(raw, filename));
-    }
-
-    // Load notes
-    const noteEntries = zip.file(new RegExp(`^${basePrefix}notes/.*\\.md$`));
-    for (const entry of noteEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'note';
-      notes.push(parseNoteFile(raw, filename));
-    }
-
-    // Layout if present
-    const layoutEntry = zip.file(`${basePrefix}graph-layout.json`);
-    if (layoutEntry) {
-      try {
-        const layoutRaw = await layoutEntry.async('string');
-        layout = JSON.parse(layoutRaw);
-      } catch (err) {
-        console.warn('Could not parse graph layout:', err);
-      }
-    }
-
-    const importedData: ProjectData = {
-      project: parsedProject,
-      entities,
-      relationships,
-      sources,
-      notes,
-    };
+  /** Stores an incoming case as a new project; an existing id is never overwritten. */
+  async importProjectBundle(incoming: CaseBundle): Promise<ImportedCase> {
+    await this.ensureInitialized();
+    const existing = (await this.listProjects()).map((p) => p.id);
+    const { bundle, summary } = applyImportTarget(incoming, existing);
+    const importedData: ProjectData = bundle.data;
 
     this.saveProjectDataToStorage(importedData);
-    await this.saveGraphLayout(parsedProject.id, layout);
+    await this.saveGraphLayout(importedData.project.id, bundle.layout);
     sqliteIndexService.rebuildIndex(importedData);
 
     // Switch active project
     const ws = await this.getWorkspace();
-    ws.activeProjectId = parsedProject.id;
+    ws.activeProjectId = importedData.project.id;
     await this.saveWorkspace(ws);
 
-    this.notifyListeners({ type: 'create', targetType: 'project', targetId: parsedProject.id });
-    return parsedProject.id;
+    this.notifyListeners({ type: 'create', targetType: 'project', targetId: importedData.project.id });
+    return summary;
   }
 
   async openInExplorer(projectId?: string): Promise<boolean> {

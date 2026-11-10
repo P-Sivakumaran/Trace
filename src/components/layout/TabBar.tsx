@@ -12,6 +12,7 @@ import {
   User,
   Pin,
   PinOff,
+  Blocks,
 } from 'lucide-react';
 
 interface TabBarProps {
@@ -74,6 +75,8 @@ export const TabBar: React.FC<TabBarProps> = ({
         return <LayoutDashboard className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'search':
         return <Search className="w-3.5 h-3.5 shrink-0 opacity-70" />;
+      case 'tools':
+        return <Blocks className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'entity':
         return <User className="w-3.5 h-3.5 shrink-0 opacity-70" />;
       case 'relationship':
@@ -193,7 +196,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               }
             }}
             style={{ WebkitAppRegion: 'no-drag' as any }}
-            className={`group relative h-full flex items-center text-[12px] cursor-default border-r border-[var(--t-border)] shrink-0 ${
+            className={`group relative h-full flex items-center text-[12px] cursor-pointer border-r border-[var(--t-border)] shrink-0 ${
               tab.isPinned ? 'px-2.5 gap-1' : 'pl-2.5 pr-1.5 gap-1.5 max-w-[200px] min-w-[96px]'
             } ${
               isActive

@@ -4,6 +4,8 @@ import {
   Relationship,
   RelationshipStatus,
   RELATIONSHIP_STATUSES,
+  EVIDENCE_CLASSES,
+  evidenceClassOf,
 } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { MarkdownEditor } from '@/components/common/MarkdownEditor';
@@ -20,6 +22,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface RelationshipEditorProps {
   relationship: Relationship;
@@ -164,7 +167,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <label className="block text-xs font-medium text-obsidian-muted">
                 Source Entity (Subject) *
               </label>
-              <select
+              <Select
                 value={draft.source_entity}
                 onChange={(e) => updateDraft({ source_entity: e.target.value })}
                 className="t-input !h-auto py-1.5 cursor-pointer"
@@ -177,7 +180,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                     {e.name} ({e.type})
                   </option>
                 ))}
-              </select>
+              </Select>
               {sourceEntity && (
                 <button
                   type="button"
@@ -232,7 +235,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <label className="block text-xs font-medium text-obsidian-muted">
                 Target Entity (Object) *
               </label>
-              <select
+              <Select
                 value={draft.target_entity}
                 onChange={(e) => updateDraft({ target_entity: e.target.value })}
                 className="t-input !h-auto py-1.5 cursor-pointer"
@@ -247,7 +250,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                       {e.name} ({e.type})
                     </option>
                   ))}
-              </select>
+              </Select>
               {targetEntity && (
                 <button
                   type="button"
@@ -277,8 +280,11 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Verification Status */}
             <div>
-              <label className="block text-[11px] text-zinc-500 mb-1">
-                Investigative Status *
+              <label className="flex items-baseline justify-between text-[11px] text-zinc-500 mb-1">
+                <span>Investigative Status *</span>
+                <span className="text-zinc-400" title="Evidence class derived from the status">
+                  {EVIDENCE_CLASSES.find((c) => c.cls === evidenceClassOf(draft.status))?.label}
+                </span>
               </label>
               <div className="grid grid-cols-1 gap-1.5">
                 {RELATIONSHIP_STATUSES.map((st) => (
@@ -300,7 +306,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                       />
                       <StatusBadge status={st.status} size="sm" />
                     </div>
-                    <span className="text-[11px] text-obsidian-dim font-mono">{st.borderStyle}</span>
+                    <span className="text-[11px] text-obsidian-dim">{EVIDENCE_CLASSES.find((c) => c.cls === evidenceClassOf(st.status))?.label}</span>
                   </label>
                 ))}
               </div>
@@ -377,7 +383,9 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                     <div>
                       <div className="text-xs font-medium text-obsidian-text">{src.title}</div>
                       <div className="text-[11px] text-obsidian-dim font-mono">
-                        {src.id} • {src.source_type} {src.url ? `• ${src.url}` : ''}
+                        {src.id} • {src.source_type}
+                        {src.accessed_at ? ` • captured ${String(src.accessed_at).slice(0, 10)}` : ''}
+                        {src.url ? ` • ${src.url}` : ''}
                       </div>
                     </div>
                   </label>
