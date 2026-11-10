@@ -55,6 +55,7 @@ describe('subscription provider policy and parsing', () => {
   });
   it('normalizes both provider formats and rejects errors and malformed answers', () => {
     expect(parseAnswer('codex', JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify(answer()) } })).answer).toBe('Grounded answer');
+    expect(parseAnswer('codex', [JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Checking the supplied evidence.' } }), JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify(answer()) } })].join('\n')).answer).toBe('Grounded answer');
     expect(parseAnswer('claude', JSON.stringify({ structured_output: answer(), is_error: false })).answer).toBe('Grounded answer');
     expect(() => parseAnswer('codex', JSON.stringify({ type: 'turn.failed' }))).toThrow('could not answer');
     expect(() => parseAnswer('claude', JSON.stringify({ is_error: true }))).toThrow('could not answer');

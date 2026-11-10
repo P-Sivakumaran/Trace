@@ -69,12 +69,14 @@ export function parseAnswer(provider: AgentProvider, output: string): AgentAnswe
     if (result.is_error) throw new Error('Claude could not answer. Check its login, model access and usage limits.');
     value = result.structured_output ?? JSON.parse(result.result);
   } else {
+    let finalText = '';
     for (const line of output.split('\n').filter(Boolean)) {
       const event = JSON.parse(line);
       if (event.type === 'turn.failed' || event.type === 'error') throw new Error('Codex could not answer. Check its login, model access and usage limits.');
-      if (event.type === 'item.completed' && event.item?.type === 'agent_message') value = JSON.parse(event.item.text);
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message') finalText = event.item.text;
       if (event.item && ['command_execution', 'file_change', 'mcp_tool_call', 'web_search'].includes(event.item.type)) throw new Error('Provider attempted an unsupported tool. No response was accepted.');
     }
+    value = JSON.parse(finalText);
   }
   const parsed = responseSchema.safeParse(value);
   if (!parsed.success) throw new Error('Provider returned an invalid structured answer. Try another message or model.');

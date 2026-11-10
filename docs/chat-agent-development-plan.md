@@ -66,6 +66,7 @@ Verification:
 | Strict agent test TypeScript check | Pass. |
 | Real account adapter smoke | Codex 0.167.0 and Claude Code 2.1.220 both answered the synthetic connection prompt, with no case data shared. |
 | Real native chat acceptance | Both providers answered through the desktop UI; provider choice/privacy state persisted and chat history survived reload. |
+| Real case-tool grounding | Both real providers requested read_source on a synthetic case, returned a valid source-one citation and labelled www.example.com unverified; no user investigation records were shared. |
 | Repeatable agent UX checker | 37 assertions pass using deterministic synthetic providers; no external inference by default. |
 | Agent accessibility scans | 5 scans, zero detected violations. Contrast-overlap incompletes at narrow/zoomed sizes are retained and manually reviewed against inherited verified tokens. |
 | Agent layout/keyboard | 700/500/320px and 200% zoom pass; transcript and feedback usable, Send fully reachable, 20 Tab presses trapped, Escape restores focus. Short-height layouts use full-dialog scrolling. |
@@ -85,6 +86,9 @@ Reports/screenshots are task attachments: `trace-agent-live-verification.json`,
 The [setup guide](chat-agent-setup.md) states account, tooling, storage and remaining
 limits. This delivery does not claim full Trace WCAG compliance, a real Kali
 installation, quota aggregation or same-provider multi-identity pooling.
+
+Codex response normalization validates the final answer after any progress
+messages; the preceding-commentary case is covered by a parser regression.
 
 ## Scoped anti-slop delivery gate
 
