@@ -28,12 +28,14 @@ import {
 } from '../markdownParser';
 import { sqliteIndexService } from '../sqliteIndex';
 import type { ReconApi } from '../recon/contracts';
+import type { AgentApi } from '../agent/contracts';
 
 declare global {
   interface Window {
     electronAPI?: {
       isDesktop: boolean;
       recon?: ReconApi;
+      agent?: AgentApi;
       getWorkspace: () => Promise<Workspace>;
       saveWorkspace: (ws: Workspace) => Promise<void>;
       listProjects: () => Promise<ProjectSummary[]>;

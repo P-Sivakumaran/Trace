@@ -3,6 +3,15 @@ import { contextBridge, ipcRenderer } from 'electron';
 // Expose safe, isolated API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   isDesktop: true,
+  agent: {
+    providers: () => ipcRenderer.invoke('agent:providers'),
+    list: (caseId: string) => ipcRenderer.invoke('agent:list', caseId),
+    get: (caseId: string, id: string) => ipcRenderer.invoke('agent:get', caseId, id),
+    create: (caseId: string) => ipcRenderer.invoke('agent:create', caseId),
+    send: (request: unknown) => ipcRenderer.invoke('agent:send', request),
+    cancel: (caseId: string, id: string) => ipcRenderer.invoke('agent:cancel', caseId, id),
+    context: (caseId: string) => ipcRenderer.invoke('agent:context', caseId),
+  },
   recon: {
     getConfig: () => ipcRenderer.invoke('recon:getConfig'),
     saveConfig: (config: unknown) => ipcRenderer.invoke('recon:saveConfig', config),

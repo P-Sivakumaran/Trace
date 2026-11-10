@@ -204,3 +204,16 @@ review and verification. The desktop flow separates collection, connection and
 assistant access; save and check the connection before collecting. A repeatable
 `npm run check:ux` walkthrough covers review/import, failure recovery, keyboard,
 contrast scans and reflow; its optional test-tool setup is in that plan.
+
+## Case agent with account-based chat
+
+Open a case and choose **Case agent** to chat through an installed Codex/ChatGPT
+or Claude Code login. Choose the account for each message; models stay separate
+by provider. Case sharing starts off. With sharing enabled, the agent can search
+this case, read cited sources and stage unverified domain proposals for your
+existing Recon review flow. It cannot run scans or write directly to the graph.
+
+See [account setup and data sharing](docs/chat-agent-setup.md) and
+[the development/verification record](docs/chat-agent-development-plan.md).
+`npm run check:agent-ux` runs the optional native test harness with synthetic
+providers by default. Real account smoke tests require explicit opt-in.

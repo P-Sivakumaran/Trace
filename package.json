@@ -20,7 +20,8 @@
     "build:mcp": "tsc -p tsconfig.mcp.json",
     "mcp:kali": "node dist-mcp/mcp/kali-server.js",
     "mcp:case": "node dist-mcp/mcp/trace-server.js",
-    "check:ux": "node scripts/check-recon-ux.mjs"
+    "check:ux": "node scripts/check-recon-ux.mjs",
+    "check:agent-ux": "node scripts/check-agent-ux.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",

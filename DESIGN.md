@@ -29,3 +29,17 @@ Copy names what happens: save connection, check connection, collect domains,
 review evidence, import selected candidates. Never imply that a certificate name
 establishes ownership or that an assistant proposal has been verified. Dates,
 counts, capabilities and connection labels come from actual saved data/results.
+
+The case agent extends the same workbench. Conversation text is the focal point;
+a compact composer keeps the selected account and sharing choice visible. Model
+configuration and context previews expand only when needed. Each reply identifies
+its provider and sharing state. Source references open actual case records;
+proposals lead directly to the existing review inbox. Provider availability is
+operational state, never a fabricated balance or plan-entitlement claim. Keep
+ENERGY 1 / RHYTHM 2 / MOTION 1; new replies follow the transcript only while the
+operator remains near its end, preserving intentional reading of older messages.
+
+At short effective viewport heights, including desktop zoom, the agent switches
+to full-dialog scrolling with a bounded transcript and sticky feedback. This
+keeps the input and Send control reachable instead of shrinking the composer into
+a narrow fixed pane. Account details and sharing previews stay expandable.

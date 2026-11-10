@@ -1,4 +1,5 @@
 import { ReconPanel } from '@/components/ReconPanel';
+import { AgentChatPanel } from '@/components/AgentChatPanel';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Entity,
@@ -1250,6 +1251,8 @@ export function App() {
   };
 
   const [reconOpen, setReconOpen] = useState(false);
+  const [reconSection, setReconSection] = useState<'collect' | 'assistant'>('collect');
+  const [agentOpen, setAgentOpen] = useState(false);
   const currentProject = projects.find((p) => p.id === activeProjectId);
   const activeTab: Tab | undefined = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -1528,7 +1531,7 @@ export function App() {
 
         {/* Center Main Workspace */}
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--t-bg)] min-w-[420px]">
-          {activeProjectId && <button className="min-h-11 border-b px-4 text-left shrink-0" onClick={() => setReconOpen(true)}>Recon &amp; MCP</button>}
+          {activeProjectId && <div className="flex flex-wrap border-b shrink-0"><button className="t-btn min-h-11 px-4 text-left" onClick={() => { setReconSection('collect'); setReconOpen(true); }}>Recon &amp; MCP</button><button className="t-btn min-h-11 px-4 text-left" onClick={() => setAgentOpen(true)}>Case agent</button></div>}
           {/* Tab Content Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {isLoading && (
@@ -1898,7 +1901,8 @@ export function App() {
         onClose={() => setShortcutsModalOpen(false)}
       />
 
-      {reconOpen && activeProjectId && <ReconPanel key={activeProjectId} caseId={activeProjectId} caseName={currentProject?.name} onClose={() => setReconOpen(false)} onImported={async () => { const updated = await storage.getProject(activeProjectId); setProjectData(previous => previous?.project.id === activeProjectId ? updated : previous); }} />}
+      {reconOpen && activeProjectId && <ReconPanel key={activeProjectId} caseId={activeProjectId} caseName={currentProject?.name} initialSection={reconSection} onClose={() => setReconOpen(false)} onImported={async () => { const updated = await storage.getProject(activeProjectId); setProjectData(previous => previous?.project.id === activeProjectId ? updated : previous); }} />}
+      {agentOpen && activeProjectId && <AgentChatPanel key={activeProjectId} caseId={activeProjectId} caseName={currentProject?.name} onClose={() => setAgentOpen(false)} onReview={() => { setAgentOpen(false); setReconSection('assistant'); setReconOpen(true); }} onOpenSource={id => { setAgentOpen(false); openTab('source', id, projectData?.sources.find(source => source.id === id)?.title ?? id); }} />}
 
       <SettingsModal
         isOpen={settingsModalOpen}

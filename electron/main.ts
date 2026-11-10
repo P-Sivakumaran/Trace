@@ -7,6 +7,7 @@ import { dump } from 'js-yaml';
 import { ReconBroker } from './recon/broker';
 import { inside, caseDirectory } from './recon/paths';
 import { trustedDocument } from './recon/trusted-renderer';
+import { AgentBroker } from './agent/broker';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +27,7 @@ let mainWindow: BrowserWindow | null = null;
 let configPath = '';
 let currentWorkspacePath = '';
 let recon: ReconBroker;
+let agent: AgentBroker;
 const entryUrl = process.env.VITE_DEV_SERVER_URL || pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
 
 function loadConfig(): { workspacePath?: string } {
@@ -170,6 +172,8 @@ app.whenReady().then(() => {
   recon = new ReconBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'),
     localServer: path.join(app.getAppPath(), 'dist-mcp/mcp/kali-server.js'), nodeExecutable: process.execPath });
   app.on('before-quit', () => recon.stop());
+  agent = new AgentBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'), scope: () => recon.config()?.scope ?? [] });
+  app.on('before-quit', () => agent.stop());
 
   // Set macOS dock icon in development (in packaged app Info.plist sets icon.icns)
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
@@ -208,6 +212,13 @@ function setupIpcHandlers() {
     }
     return listener(event, ...args);
   });
+  handle('agent:providers', () => agent.providers());
+  handle('agent:list', (_event, caseId) => agent.list(caseId));
+  handle('agent:get', (_event, caseId, id) => agent.get(caseId, id));
+  handle('agent:create', (_event, caseId) => agent.create(caseId));
+  handle('agent:send', (_event, request) => agent.send(request));
+  handle('agent:cancel', (_event, caseId, id) => agent.cancel(caseId, id));
+  handle('agent:context', (_event, caseId) => agent.context(caseId));
   handle('recon:getConfig', () => recon.config());
   handle('recon:saveConfig', (_event, config) => recon.saveConfig(config));
   handle('recon:health', () => recon.health());
@@ -238,6 +249,7 @@ function setupIpcHandlers() {
     });
     if (!result.canceled && result.filePaths.length > 0) {
       recon.stop();
+      agent.stop();
       currentWorkspacePath = result.filePaths[0];
       ensureDirSync(currentWorkspacePath);
       ensureDirSync(path.join(currentWorkspacePath, 'projects'));

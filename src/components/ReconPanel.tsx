@@ -45,12 +45,12 @@ function JobReview({ job, busy, perform, api, onImported }: {
   </details>;
 }
 
-export function ReconPanel({ caseId, caseName, onClose, onImported }: { caseId: string; caseName?: string; onClose: () => void; onImported: () => Promise<void> }) {
+export function ReconPanel({ caseId, caseName, initialSection = 'collect', onClose, onImported }: { caseId: string; caseName?: string; initialSection?: Section; onClose: () => void; onImported: () => Promise<void> }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const api = window.electronAPI?.recon;
   const alive = useRef(true);
   const inFlight = useRef(false);
-  const [section, setSection] = useState<Section>('collect');
+  const [section, setSection] = useState<Section>(initialSection);
   const [saved, setSaved] = useState<ReconConfig | null>(null);
   const [mode, setMode] = useState<ReconConfig['mode']>('local');
   const [scope, setScope] = useState('');
