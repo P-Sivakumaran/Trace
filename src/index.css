@@ -89,6 +89,35 @@
   color-scheme: dark;
 }
 
+/* ---------- Cursors: everything clickable shows a pointer ---------- */
+/* Tailwind's preflight resets buttons to the default cursor; restore it for all
+   interactive controls. Utilities (cursor-grab, cursor-col-resize, …) still win. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='switch'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  a[href],
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='range']:not(:disabled),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled='true'],
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+}
+
 /* ---------- Base component layer (shared by every screen) ---------- */
 @layer components {
   /* Section label: tiny uppercase, used for every panel/group heading */
@@ -169,7 +198,7 @@
     padding: 0 8px 0 10px;
     font-size: 12px;
     color: var(--t-text);
-    cursor: default;
+    cursor: pointer;
     white-space: nowrap;
   }
   .t-row:hover { background: var(--t-hover); }
@@ -206,11 +235,11 @@
     justify-content: flex-start;
   }
   .t-menu-item.justify-between, .t-menu-item:has(> div + span) { justify-content: space-between; }
-  .t-menu-item > :not(:first-child) { margin-left: 0 !important; }
+  .t-menu-item > * { margin-left: 0 !important; margin-right: 0 !important; margin-inline: 0 !important; }
   .t-menu-item:hover { background: var(--t-accent); color: #fff; }
   .t-menu-item svg { width: 13px !important; height: 13px !important; opacity: 0.75; color: inherit !important; fill: none !important; flex-shrink: 0; }
   .t-menu-item > .space-x-2, .t-menu-item > div { display: flex; align-items: center; gap: 8px; }
-  .t-menu-item > div > :not(:first-child) { margin-left: 0 !important; }
+  .t-menu-item > div > * { margin-left: 0 !important; margin-right: 0 !important; margin-inline: 0 !important; }
   .t-menu-sep { height: 1px; margin: 3px 0; background: var(--t-border); }
   /* Keyboard hint */
   .t-kbd {

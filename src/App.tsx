@@ -6,6 +6,7 @@ import {
   Note,
   Project,
   ProjectData,
+  ProjectRemoveMode,
   ProjectSummary,
   Relationship,
   RelationshipStatus,
@@ -36,7 +37,17 @@ import { CommandPaletteModal } from '@/components/modals/CommandPaletteModal';
 import { ShortcutsModal } from '@/components/modals/ShortcutsModal';
 import { SettingsModal } from '@/components/modals/SettingsModal';
 import { ImportDataModal } from '@/components/modals/ImportDataModal';
+import { WhatsNewModal } from '@/components/modals/WhatsNewModal';
+import { LAST_SEEN_KEY, cacheNotes, fetchReleaseNotes, whatsNewDecision, type ReleaseInfo } from '@/services/updates/updateChecker';
 import { ToolsView } from '@/features/tools/ToolsView';
+import {
+  fileListToBundleFiles,
+  readCaseBundle,
+  textFilesToBundleFiles,
+  zipToBundleFiles,
+  type BundleFile,
+  type ImportedCase,
+} from '@/services/import/caseBundle';
 import type { ImportBatch } from '@/services/import/types';
 import type { ImportRecords } from '@/services/import/plan';
 import { createSampleProject } from '@/services/storage/sampleData';
@@ -48,6 +59,7 @@ import {
   PanelRightOpen,
   Folder,
   FolderOpen,
+  Upload,
   ChevronDown,
   Plus,
   Check,
@@ -152,6 +164,17 @@ export function App() {
   // Selection State
   const [selectedEntityId, setSelectedEntityId] = useState<string | undefined>(undefined);
   const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>(undefined);
+  // Picking an object always brings the inspector back, even if it was hidden.
+  const selectEntity = (id: string) => {
+    setSelectedEntityId(id);
+    setSelectedRelationshipId(undefined);
+    setRightSidebarOpen(true);
+  };
+  const selectRelationship = (id: string) => {
+    setSelectedRelationshipId(id);
+    setSelectedEntityId(undefined);
+    setRightSidebarOpen(true);
+  };
 
   // Modals State
   const [entityModalOpen, setEntityModalOpen] = useState<boolean>(false);
@@ -159,6 +182,43 @@ export function App() {
   const [relModalOpen, setRelModalOpen] = useState<boolean>(false);
   const [importDataOpen, setImportDataOpen] = useState<boolean>(false);
   const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
+  const [whatsNew, setWhatsNew] = useState<ReleaseInfo | null>(null);
+
+  // After the app was updated to a new version, show its release notes once.
+  useEffect(() => {
+    if (initialLoading) return;
+    let lastSeen: string | null = null;
+    try {
+      lastSeen = localStorage.getItem(LAST_SEEN_KEY);
+    } catch {
+      /* storage unavailable: never nag */
+      return;
+    }
+    const remember = () => {
+      try {
+        localStorage.setItem(LAST_SEEN_KEY, __APP_VERSION__);
+      } catch {
+        /* ignore */
+      }
+    };
+    const decision = whatsNewDecision(lastSeen, __APP_VERSION__);
+    if (decision === 'none') return;
+    if (decision === 'record') return remember();
+    let alive = true;
+    fetchReleaseNotes(__APP_VERSION__).then((r) => {
+      if (!alive) return;
+      if (r.status === 'ok') {
+        cacheNotes(r.release);
+        setWhatsNew(r.release);
+        remember();
+      } else if (r.status === 'not-found') {
+        remember(); // nothing published for this version: don't ask again
+      } // network / rate-limit errors: try again next launch
+    });
+    return () => {
+      alive = false;
+    };
+  }, [initialLoading]);
   const [relModalDefaultSource, setRelModalDefaultSource] = useState<string | undefined>(undefined);
   const [relModalDefaultTarget, setRelModalDefaultTarget] = useState<string | undefined>(undefined);
 
@@ -570,7 +630,7 @@ export function App() {
       };
     });
 
-    setSelectedEntityId(entityId);
+    selectEntity(entityId);
     showToast(`Created ${type} "${defaultName}"`);
   };
 
@@ -647,7 +707,8 @@ export function App() {
     itemName: string;
     filePaths: string[];
     warningMessage?: string;
-    onConfirm: () => void;
+    diskChoice?: boolean;
+    onConfirm: (mode?: ProjectRemoveMode) => void;
   }>({
     isOpen: false,
     title: '',
@@ -696,6 +757,7 @@ export function App() {
 
   // Hidden File input ref for ZIP import
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load Workspace and Projects
   const loadWorkspaceData = useCallback(async () => {
@@ -981,13 +1043,8 @@ export function App() {
       setActiveTabId(tabId);
     }
 
-    if (type === 'entity' && targetId) {
-      setSelectedEntityId(targetId);
-      setSelectedRelationshipId(undefined);
-    } else if (type === 'relationship' && targetId) {
-      setSelectedRelationshipId(targetId);
-      setSelectedEntityId(undefined);
-    }
+    if (type === 'entity' && targetId) selectEntity(targetId);
+    else if (type === 'relationship' && targetId) selectRelationship(targetId);
   };
 
   const closeTab = (tabId: string) => {
@@ -1043,10 +1100,15 @@ export function App() {
     );
   };
 
+  /** Keeps an open tab's title in step with the record it shows. */
+  const renameTab = (tabId: string, title: string) =>
+    setTabs((prev) => (prev.some((t) => t.id === tabId && t.title !== title) ? prev.map((t) => (t.id === tabId ? { ...t, title } : t)) : prev));
+
   // Entity Actions
   const handleSaveEntity = async (entity: Entity) => {
     if (!activeProjectId) return;
     await storage.saveEntity(activeProjectId, entity);
+    renameTab(`tab-entity-${entity.id}`, entity.name);
     const updated = await storage.getProject(activeProjectId);
     setProjectData(updated);
     showToast(`Entity "${entity.name}" saved`);
@@ -1088,9 +1150,58 @@ export function App() {
   const handleSaveRelationship = async (rel: Relationship) => {
     if (!activeProjectId) return;
     await storage.saveRelationship(activeProjectId, rel);
+    renameTab(`tab-relationship-${rel.id}`, `Rel: ${rel.type}`);
     const updated = await storage.getProject(activeProjectId);
     setProjectData(updated);
     showToast(`Relationship "${rel.type}" saved`);
+  };
+
+  // Inspector shortcuts ------------------------------------------------------
+  /** New note that mentions the entity, so it shows up under the entity's Notes. */
+  const handleAddNoteForEntity = async (entityId: string) => {
+    if (!activeProjectId || !projectData) return;
+    const entity = projectData.entities.find((e) => e.id === entityId);
+    if (!entity) return;
+    const now = new Date().toISOString();
+    const note: Note = {
+      id: `note-${Date.now().toString(36)}`,
+      type: 'note',
+      title: `Note: ${entity.name}`,
+      tags: [],
+      created_at: now,
+      updated_at: now,
+      markdownBody: `# Note: ${entity.name}\n\nAbout [[${entity.name}]]\n\n`,
+    };
+    await storage.saveNote(activeProjectId, note);
+    setProjectData(await storage.getProject(activeProjectId));
+    openTab('note', note.id, note.title);
+  };
+
+  /** Cites a source on a relationship: an existing one, or a brand-new source (opened for editing). */
+  const handleAddEvidence = async (relId: string, sourceId: string | null) => {
+    if (!activeProjectId || !projectData) return;
+    const rel = projectData.relationships.find((r) => r.id === relId);
+    if (!rel) return;
+    let id = sourceId;
+    let created: Source | null = null;
+    if (!id) {
+      created = {
+        id: `src-${Date.now().toString(36)}`,
+        type: 'source',
+        title: 'New Evidence Source',
+        accessed_at: new Date().toISOString(),
+        source_type: 'webpage',
+        markdownBody: '# New Source\n\n## Extract\n\nRecord excerpt...\n\n## Notes\n\nNotes...',
+      };
+      await storage.saveSource(activeProjectId, created);
+      id = created.id;
+    }
+    if (!(rel.evidence || []).includes(id)) {
+      await storage.saveRelationship(activeProjectId, { ...rel, evidence: [...(rel.evidence || []), id] });
+    }
+    setProjectData(await storage.getProject(activeProjectId));
+    if (created) openTab('source', created.id, created.title);
+    else showToast('Source cited');
   };
 
   const handleDeleteRelationship = (relId: string) => {
@@ -1118,6 +1229,7 @@ export function App() {
   const handleSaveSource = async (source: Source) => {
     if (!activeProjectId) return;
     await storage.saveSource(activeProjectId, source);
+    renameTab(`tab-source-${source.id}`, source.title);
     const updated = await storage.getProject(activeProjectId);
     setProjectData(updated);
     showToast(`Source "${source.title}" saved`);
@@ -1149,6 +1261,7 @@ export function App() {
   const handleSaveNote = async (note: Note) => {
     if (!activeProjectId) return;
     await storage.saveNote(activeProjectId, note);
+    renameTab(`tab-note-${note.id}`, note.title);
     const updated = await storage.getProject(activeProjectId);
     setProjectData(updated);
     showToast(`Note "${note.title}" saved`);
@@ -1199,12 +1312,15 @@ export function App() {
         `projects/${projectId}/notes/ (*.md)`,
         `SQLite Index records for ${projectId}`,
       ],
-      warningMessage:
-        'This will permanently delete the entire project directory and all canonical Markdown files.',
-      onConfirm: async () => {
-        await storage.deleteProject(projectId);
+      // Desktop: the user picks what happens to the files. Web: browser storage is simply cleared.
+      diskChoice: storage.isDesktop(),
+      warningMessage: storage.isDesktop() ? undefined : 'This permanently deletes the investigation from browser storage.',
+      onConfirm: async (mode) => {
+        await storage.deleteProject(projectId, mode);
         await loadWorkspaceData();
-        showToast(`Deleted project: ${name}`);
+        showToast(
+          mode === 'trash' ? `Moved "${name}" to the Trash` : mode === 'keep' ? `Removed "${name}" from TRACE (files kept in the "removed" folder)` : `Deleted project: ${name}`,
+        );
       },
     });
   };
@@ -1250,25 +1366,77 @@ export function App() {
     showToast(`Imported ${records.entities.length} entities, ${records.relationships.length} relationships`);
   };
 
-  // Import ZIP
+  // Import an investigation from a .zip, a folder, or a project.md. Always
+  // creates a NEW case: an existing id is never overwritten.
+  const finishCaseImport = async (r: ImportedCase) => {
+    await loadWorkspaceData();
+    setActiveProjectId(r.id);
+    openTab('overview', undefined, 'Project Overview');
+    const n = r.counts;
+    const base = `Imported "${r.name}" · ${n.entities} entities, ${n.relationships} links`;
+    showToast(
+      r.renamed ? `${base} — saved as a copy, a case with this id already exists` : r.skipped.length ? `${base} · ${r.skipped.length} unrelated file(s) ignored` : base,
+    );
+  };
+
+  const importCaseFiles = async (files: BundleFile[], origin: string) => {
+    showToast('Importing investigation…');
+    const bundle = await readCaseBundle(files, origin);
+    await finishCaseImport(await storage.importProjectBundle(bundle));
+  };
+
+  const reportImportError = (err: unknown) => {
+    console.error('Import failed:', err);
+    alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+  };
+
+  /** mode: 'any' = one native dialog for .zip / folder / project.md (macOS), else a specific kind. */
+  const handleImportInvestigation = async (mode: 'any' | 'zip' | 'folder') => {
+    const api = window.electronAPI;
+    if (isElectron && api?.pickImport) {
+      try {
+        const sel = await api.pickImport(mode);
+        if (!sel) return;
+        if (!sel.ok) {
+          alert(`Import failed: ${sel.error}`);
+          return;
+        }
+        if (sel.kind === 'zip') await importCaseFiles(await zipToBundleFiles(sel.data.buffer.slice(sel.data.byteOffset, sel.data.byteOffset + sel.data.byteLength) as ArrayBuffer), sel.name);
+        else await importCaseFiles(textFilesToBundleFiles(sel.files), sel.name);
+      } catch (err) {
+        reportImportError(err);
+      }
+      return;
+    }
+    (mode === 'folder' ? folderInputRef : fileInputRef).current?.click();
+  };
+
   const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     try {
-      showToast('Importing project archive...');
-      const importedId = await storage.importProjectZip(file);
-      await loadWorkspaceData();
-      setActiveProjectId(importedId);
-      openTab('overview', undefined, 'Project Overview');
-      showToast('Project imported successfully');
+      await importCaseFiles(await zipToBundleFiles(await file.arrayBuffer()), file.name.replace(/\.zip$/i, ''));
     } catch (err) {
-      console.error('Import failed:', err);
-      alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      reportImportError(err);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleImportFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    try {
+      await importCaseFiles(fileListToBundleFiles(list), '');
+    } catch (err) {
+      reportImportError(err);
+    } finally {
+      if (folderInputRef.current) folderInputRef.current.value = '';
+    }
+  };
+
+  // macOS shows one dialog for everything; other platforms and the browser offer archive and folder separately.
+  const importOneDialog = isElectron && isMac;
 
   const currentProject = projects.find((p) => p.id === activeProjectId);
   const activeTab: Tab | undefined = tabs.find((t) => t.id === activeTabId) || tabs[0];
@@ -1292,9 +1460,9 @@ export function App() {
                 style={{ width: `${Math.min(100, Math.max(8, loadingProgress))}%` }}
               />
             </div>
-            {__BUILD_HASH__ && (
-              <div className="text-[10px] font-mono text-zinc-600 truncate select-text" title={__BUILD_HASH__}>
-                sha256 {__BUILD_HASH__}
+            {isElectron && (
+              <div className="text-[10px] font-mono text-zinc-600 truncate select-text" title={`Build ID (UTC time – commit)\n${__BUILD_ID__}`}>
+                build {__BUILD_ID__}
               </div>
             )}
           </div>
@@ -1307,6 +1475,15 @@ export function App() {
         type="file"
         accept=".zip"
         onChange={handleImportFileChange}
+        className="hidden"
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error non-standard but widely supported folder picker
+        webkitdirectory=""
+        multiple
+        onChange={handleImportFolderChange}
         className="hidden"
       />
 
@@ -1388,6 +1565,47 @@ export function App() {
                 <Plus />
                 <span>New investigation…</span>
               </button>
+              {importOneDialog ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectSelectorOpen(false);
+                    handleImportInvestigation('any');
+                  }}
+                  className="t-menu-item"
+                  title="Choose a case folder, a .zip archive or a project.md file"
+                >
+                  <Upload />
+                  <span>Import investigation…</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProjectSelectorOpen(false);
+                      handleImportInvestigation('zip');
+                    }}
+                    className="t-menu-item"
+                    title="Open a case archive (.zip) exported from TRACE"
+                  >
+                    <Upload />
+                    <span>Import investigation (.zip)…</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProjectSelectorOpen(false);
+                      handleImportInvestigation('folder');
+                    }}
+                    className="t-menu-item"
+                    title="Open a case folder that contains project.md"
+                  >
+                    <Folder />
+                    <span>Import investigation folder…</span>
+                  </button>
+                </>
+              )}
               {storage.isDesktop() && (
                 <button
                   type="button"
@@ -1440,7 +1658,7 @@ export function App() {
           >
             <SearchIcon className="w-3 h-3 shrink-0" />
             <span className="flex-1 text-left truncate">Go to anything…</span>
-            <span className="t-kbd">⌘K</span>
+            <span className="font-mono text-[10px] text-[var(--t-dim)]">⌘K</span>
           </button>
           {projectData && (
             <button
@@ -1530,7 +1748,7 @@ export function App() {
               });
             }}
             onExportZip={handleExportZip}
-            onImportZip={() => fileInputRef.current?.click()}
+            onImportZip={() => handleImportInvestigation(isElectron && isMac ? 'any' : 'zip')}
             onImportData={() => setImportDataOpen(true)}
             onRebuildIndex={handleRebuildIndex}
             onDeleteEntity={handleDeleteEntity}
@@ -1593,6 +1811,8 @@ export function App() {
                   { label: 'New entity…', run: () => setEntityModalOpen(true) },
                   { label: 'New relationship…', run: () => setRelModalOpen(true) },
                   { label: 'New investigation…', run: () => setProjectModalOpen(true) },
+                  { label: importOneDialog ? 'Import investigation…' : 'Import investigation (.zip)…', run: () => handleImportInvestigation(importOneDialog ? 'any' : 'zip') },
+                  ...(importOneDialog ? [] : [{ label: 'Import investigation folder…', run: () => handleImportInvestigation('folder') }]),
                 ].map((a) => (
                   <button key={a.label} type="button" onClick={a.run} className="t-row w-full !h-[26px] !px-2 rounded-[3px]">
                     {a.label}
@@ -1610,12 +1830,10 @@ export function App() {
                   selectedEntityId={selectedEntityId}
                   selectedRelationshipId={selectedRelationshipId}
                   onSelectEntity={(id) => {
-                    setSelectedEntityId(id);
-                    setSelectedRelationshipId(undefined);
+                    selectEntity(id);
                   }}
                   onSelectRelationship={(id) => {
-                    setSelectedRelationshipId(id);
-                    setSelectedEntityId(undefined);
+                    selectRelationship(id);
                   }}
                   onOpenEntity={(id) => {
                     const e = projectData.entities.find((ent) => ent.id === id);
@@ -1695,7 +1913,7 @@ export function App() {
                         setRelModalOpen(true);
                       }}
                       onShowInGraph={(id) => {
-                        setSelectedEntityId(id);
+                        selectEntity(id);
                         openTab('graph', undefined, 'Interactive Graph');
                       }}
                       onDirtyChange={(dirty) => setTabDirty(activeTab.id, dirty)}
@@ -1729,7 +1947,7 @@ export function App() {
                         openTab('source', id, s ? s.title : id);
                       }}
                       onShowInGraph={(id) => {
-                        setSelectedRelationshipId(id);
+                        selectRelationship(id);
                         openTab('graph', undefined, 'Interactive Graph');
                       }}
                     />
@@ -1831,7 +2049,6 @@ export function App() {
       {projectData && (
         <RightSidebar
           isOpen={rightSidebarOpen}
-          onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
           projectData={projectData}
           selectedEntityId={selectedEntityId}
           selectedRelationshipId={selectedRelationshipId}
@@ -1851,6 +2068,12 @@ export function App() {
             setRelModalDefaultSource(sourceId);
             setRelModalOpen(true);
           }}
+          onOpenNote={(id) => {
+            const n = projectData.notes.find((nt) => nt.id === id);
+            openTab('note', id, n ? n.title : id);
+          }}
+          onAddNoteForEntity={handleAddNoteForEntity}
+          onAddEvidence={handleAddEvidence}
           onRunTransform={handleRunTransformFromSidebar}
           activeRunningTransformId={activeRunningTransformId}
           width={effectiveRightWidth}
@@ -1914,6 +2137,7 @@ export function App() {
         itemName={deleteModalState.itemName}
         filePathsToDelete={deleteModalState.filePaths}
         warningMessage={deleteModalState.warningMessage}
+        diskChoice={deleteModalState.diskChoice}
       />
 
       <CommandPaletteModal
@@ -1929,6 +2153,8 @@ export function App() {
         isOpen={shortcutsModalOpen}
         onClose={() => setShortcutsModalOpen(false)}
       />
+
+      <WhatsNewModal release={whatsNew} onClose={() => setWhatsNew(null)} />
 
       <ImportDataModal
         isOpen={importDataOpen}
@@ -1952,6 +2178,9 @@ export function App() {
         onExportZip={handleExportZip}
         onRebuildIndex={handleRebuildIndex}
         onOpenShortcuts={() => setShortcutsModalOpen(true)}
+        projectsVersion={projects}
+        loadStorageUsage={() => storage.getStorageUsage()}
+        onDeleteProject={handleDeleteProject}
       />
 
     </div>

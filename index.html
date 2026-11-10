@@ -8,17 +8,24 @@
   <title>Trace</title>
 </head>
 
-<body class="bg-[#121214] text-[#ececed] m-0 p-0 overflow-hidden select-none">
+<body style="margin: 0; padding: 0; overflow: hidden; background: #111113;">
   <div id="root">
-    <div style="position: fixed; inset: 0; background-color: #121214; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-app-region: drag;">
-      <div style="position: absolute; top: 12px; left: 16px; width: 74px; height: 16px;"></div>
-      <div style="display: flex; flex-direction: column; align-items: center; width: 380px; max-width: 85vw; text-align: center;">
-        <div style="font-size: 14px; font-weight: 600; color: #e4e4e7; margin-bottom: 16px; letter-spacing: 0.025em;">
-          Loading Trace
+    <!-- Static splash shown until React mounts. Must stay identical to the
+         startup splash in App.tsx so the hand-over is invisible. -->
+    <div style="position: fixed; inset: 0; z-index: 100; background: #111113; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-app-region: drag;">
+      <div style="width: 256px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between;">
+          <span style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: #e4e4e7;">TRACE</span>
+          <span style="font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: #71717a;">%TRACE_APP_VERSION%</span>
         </div>
-        <div style="width: 100%; height: 6px; background-color: rgba(39, 39, 42, 0.8); border-radius: 9999px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.05); padding: 1px; box-sizing: border-box;">
-          <div style="height: 100%; width: 25%; background: linear-gradient(90deg, #6366f1, #818cf8); border-radius: 9999px; box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);"></div>
+        <div style="height: 1px; width: 100%; background: #27272a; overflow: hidden;">
+          <div style="height: 100%; width: 15%; background: #47908a;"></div>
         </div>
+        <!-- Desktop app only (shown by the script below), same as the React splash. -->
+        <div id="trace-build" style="display: none; font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: #52525b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">build %TRACE_BUILD_ID%</div>
+        <script>
+          if (window.electronAPI && window.electronAPI.isDesktop) document.getElementById('trace-build').style.display = 'block';
+        </script>
       </div>
     </div>
   </div>

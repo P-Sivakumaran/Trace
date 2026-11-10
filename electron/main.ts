@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { ToolManager } from './tools';
+import { readImportSelection } from './caseFiles';
+import { collectUsage, removeProjectDir, type RemoveMode } from './diskUsage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -387,11 +389,35 @@ function setupIpcHandlers() {
   });
 
   // Projects: Delete
-  ipcMain.handle('projects:delete', async (_, id: string) => {
-    const projDir = getProjectDir(id);
-    if (fs.existsSync(projDir)) {
-      fs.rmSync(projDir, { recursive: true, force: true });
+  // mode: 'delete' (permanent, default), 'keep' (moved to <workspace>/removed, files kept), 'trash' (system Trash)
+  ipcMain.handle('projects:delete', async (_, id: string, mode?: RemoveMode) => {
+    const m: RemoveMode = mode === 'keep' || mode === 'trash' ? mode : 'delete';
+    return removeProjectDir(currentWorkspacePath, getProjectDir(id), m, (p) => shell.trashItem(p));
+  });
+
+  // Disk usage of cases, tools and the portable Python
+  ipcMain.handle('storage:usage', async () => {
+    const names: Record<string, string> = {};
+    const projectsDir = path.join(currentWorkspacePath, 'projects');
+    try {
+      for (const e of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        try {
+          const m = fs.readFileSync(path.join(projectsDir, e.name, 'project.md'), 'utf-8').match(/^name:\s*["']?([^"'\n\r]+)["']?/m);
+          if (m) names[e.name] = m[1].trim();
+        } catch {
+          /* unreadable project.md */
+        }
+      }
+    } catch {
+      /* no projects */
     }
+    return collectUsage({
+      workspacePath: currentWorkspacePath,
+      toolsDir: path.join(app.getPath('userData'), 'tools'),
+      pythonDir: path.join(app.getPath('userData'), 'python'),
+      names,
+    });
   });
 
   // Entities: Save
@@ -536,6 +562,26 @@ function setupIpcHandlers() {
     return true;
   });
 
+  // Import investigation: native picker for a case .zip, a case folder or its project.md.
+  // macOS can pick files and folders in one dialog; Windows/Linux cannot, so the
+  // renderer asks for 'zip' or 'folder' explicitly there.
+  ipcMain.handle('import:pick', async (_, mode: 'any' | 'zip' | 'folder') => {
+    const isMac = process.platform === 'darwin';
+    const properties: ('openFile' | 'openDirectory')[] =
+      mode === 'folder' ? ['openDirectory'] : mode === 'zip' ? ['openFile'] : isMac ? ['openFile', 'openDirectory'] : ['openFile'];
+    const filters =
+      mode === 'zip' ? [{ name: 'TRACE case archive', extensions: ['zip'] }]
+      : mode === 'any' ? [{ name: 'Investigation (.zip, project.md)', extensions: ['zip', 'md'] }]
+      : undefined;
+    const res = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import investigation',
+      properties,
+      filters: mode === 'folder' ? undefined : filters,
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return readImportSelection(res.filePaths[0]);
+  });
+
   // External OSINT tools (catalog only; see electron/tools.ts)
   ipcMain.handle('tools:status', async () => ({
     python: await toolManager!.findPython(),
@@ -545,6 +591,10 @@ function setupIpcHandlers() {
   ipcMain.handle('tools:install', async (event, id: string) => {
     const send = (line: string, stream: string) => event.sender.send('tools:log', { runId: `install:${id}`, line, stream });
     return toolManager!.install(String(id), send);
+  });
+  ipcMain.handle('tools:installPython', async (event) => {
+    const send = (line: string, stream: string) => event.sender.send('tools:log', { runId: 'install:python', line, stream });
+    return toolManager!.installPython(send);
   });
   ipcMain.handle('tools:uninstall', async (_, id: string) => toolManager!.uninstall(String(id)));
   ipcMain.handle('tools:run', async (event, req: { id: string; input: string; runId: string }) => {

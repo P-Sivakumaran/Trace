@@ -3,6 +3,7 @@ import { useEscapeKey } from '@/components/common/Dialog';
 import { ProjectData, Relationship, RelationshipStatus, RELATIONSHIP_STATUSES } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { X, Share2, Plus } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface NewRelationshipModalProps {
   isOpen: boolean;
@@ -122,7 +123,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
               <label className="block text-[11px] text-zinc-500 mb-1">
                 Source Entity *
               </label>
-              <select
+              <Select
                 value={sourceId}
                 onChange={(e) => {
                   const newSrc = e.target.value;
@@ -140,14 +141,14 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
                     {e.name} ({e.type})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div>
               <label className="block text-[11px] text-zinc-500 mb-1">
                 Target Entity *
               </label>
-              <select
+              <Select
                 value={targetId}
                 onChange={(e) => setTargetId(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-[var(--t-accent)] cursor-pointer"
@@ -158,7 +159,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
                     {e.name} ({e.type})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -187,7 +188,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
               <label className="block text-[11px] text-zinc-500 mb-1">
                 Verification Status *
               </label>
-              <select
+              <Select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as RelationshipStatus)}
                 className="w-full px-2.5 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded text-obsidian-text focus:outline-none focus:border-[var(--t-accent)] cursor-pointer"
@@ -197,7 +198,7 @@ export const NewRelationshipModal: React.FC<NewRelationshipModalProps> = ({
                     {s.label} ({s.borderStyle})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div>

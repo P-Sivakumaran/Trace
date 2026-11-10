@@ -4,13 +4,16 @@ import {
   Note,
   Project,
   ProjectData,
+  ProjectRemoveMode,
   ProjectSummary,
   Relationship,
   SearchResult,
   Source,
   StorageChangeEvent,
+  StorageUsage,
   Workspace,
 } from '@/types';
+import type { CaseBundle, ImportedCase } from '../import/caseBundle';
 
 export interface IStorageService {
   isDesktop(): boolean;
@@ -22,7 +25,12 @@ export interface IStorageService {
   createProject(name: string, description?: string, id?: string): Promise<Project>;
   getProject(id: string): Promise<ProjectData | null>;
   saveProject(project: Project): Promise<void>;
-  deleteProject(id: string): Promise<void>;
+  /**
+   * Removes a project. mode (desktop only): 'delete' permanent (default),
+   * 'keep' moves the folder out of TRACE but keeps the files, 'trash' sends it to the system Trash.
+   */
+  deleteProject(id: string, mode?: ProjectRemoveMode): Promise<void>;
+  getStorageUsage(): Promise<StorageUsage>;
 
   // Entities
   saveEntity(projectId: string, entity: Entity): Promise<void>;
@@ -51,6 +59,8 @@ export interface IStorageService {
   // Import / Export & File System
   exportProjectZip(projectId: string): Promise<Blob>;
   importProjectZip(file: File | ArrayBuffer): Promise<string>;
+  /** Imports a case read from a zip or folder as a NEW project (never overwrites). */
+  importProjectBundle(bundle: CaseBundle): Promise<ImportedCase>;
   openInExplorer(projectId?: string): Promise<boolean>;
   selectDirectory?(): Promise<string | null>;
 

@@ -15,8 +15,10 @@ import {
 import type { Entity, ProjectData } from '@/types';
 import { EntityIcon, getEntityTypeColor } from '@/components/common/EntityIcon';
 import { TOOL_CATALOG, normaliseToolInput, type ToolSpec } from '@/services/tools/catalog';
+import { CodeBlock } from '@/components/common/CodeBlock';
 import { toolOutputToBatch } from '@/services/tools/parsers';
 import type { ImportBatch } from '@/services/import/types';
+import { Select } from '@/components/common/Select';
 
 interface ToolsViewProps {
   projectData: ProjectData | null;
@@ -49,6 +51,9 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
   const [runIds, setRunIds] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, RunResult>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState('');
+  const [pythonBusy, setPythonBusy] = useState(false);
+  const [pythonError, setPythonError] = useState('');
 
   const refresh = async () => {
     if (api) setStatus(await api.status());
@@ -81,6 +86,17 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
       const { [spec.id]: _, ...rest } = p;
       return rest;
     });
+    refresh();
+  };
+
+  const installPython = async () => {
+    if (!api) return;
+    setLogs((p) => ({ ...p, 'install:python': [] }));
+    setPythonBusy(true);
+    setPythonError('');
+    const r = await api.installPython();
+    if (!r.ok) setPythonError(r.error || 'Python installation failed');
+    setPythonBusy(false);
     refresh();
   };
 
@@ -146,8 +162,11 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
   };
 
   const spec = sel.kind === 'tool' ? TOOL_CATALOG.find((t) => t.id === sel.id)! : null;
-  const installedTools = TOOL_CATALOG.filter((t) => installed(t.id)?.installed);
-  const available = TOOL_CATALOG.filter((t) => !installed(t.id)?.installed);
+  const q = query.trim().toLowerCase();
+  const matches = (t: ToolSpec) => !q || `${t.name} ${t.tagline} ${t.category} ${t.pip.package}`.toLowerCase().includes(q);
+  const installedTools = TOOL_CATALOG.filter((t) => installed(t.id)?.installed && matches(t));
+  const available = TOOL_CATALOG.filter((t) => !installed(t.id)?.installed && matches(t));
+  const categories = [...new Set(available.map((t) => t.category))];
 
   return (
     <div className="h-full flex flex-col bg-[var(--t-bg)] text-[12px]">
@@ -155,10 +174,19 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
         <span className="t-label">Tools</span>
         <span className="text-[11px] text-zinc-500 truncate max-[1100px]:hidden">External OSINT tools run on this computer · results are reviewed before they enter the case</span>
         <div className="flex-1" />
-        {status && (
-          <span className={`font-mono text-[10.5px] whitespace-nowrap ${status.python.found ? 'text-zinc-500' : 'text-amber-400'}`}>
-            {status.python.found ? `python ${status.python.version}` : 'python not found'}
+        {status && status.python.found && (
+          <span className="font-mono text-[10.5px] whitespace-nowrap text-zinc-500" title={status.python.command}>
+            {status.python.managed ? 'portable python' : 'python'} {status.python.version}
           </span>
+        )}
+        {status && !status.python.found && (
+          <>
+            <span className="text-[11px] whitespace-nowrap text-amber-400">Python not found</span>
+            <button type="button" className="t-btn !h-[22px]" disabled={pythonBusy} onClick={installPython} title="Download a portable Python 3.12 for TRACE (about 25 MB, checksum-verified, no admin rights)">
+              {pythonBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              {pythonBusy ? 'Installing Python…' : 'Install Python'}
+            </button>
+          </>
         )}
         <button type="button" className="t-icon-btn" title="Refresh" onClick={refresh}>
           <RefreshCw />
@@ -168,12 +196,16 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
       <div className="flex-1 min-h-0 flex">
         {/* List */}
         <aside className="w-[260px] max-[1280px]:w-[200px] shrink-0 border-r border-[var(--t-border)] bg-[var(--t-panel)] overflow-y-auto">
-          <ListHead title="Integrations" />
-          <ListRow active={sel.kind === 'mcp'} onClick={() => setSel({ kind: 'mcp' })}>
-            <Bot className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-            <span className="flex-1 truncate">MCP server</span>
-            <Pill on={!!mcp?.enabled}>{mcpApi ? (mcp?.enabled ? 'On' : 'Off') : 'Desktop'}</Pill>
-          </ListRow>
+          {mcpApi && (
+            <>
+              <ListHead title="Integrations" />
+              <ListRow active={sel.kind === 'mcp'} onClick={() => setSel({ kind: 'mcp' })}>
+                <Bot className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span className="flex-1 truncate">MCP server</span>
+                <Pill on={!!mcp?.enabled}>{mcp?.enabled ? 'On' : 'Off'}</Pill>
+              </ListRow>
+            </>
+          )}
 
           <ListHead title={`Installed · ${installedTools.length}`} />
           {installedTools.length === 0 && <div className="px-3 py-1.5 text-[11px] text-zinc-600">Nothing installed yet.</div>}
@@ -182,15 +214,37 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
           ))}
 
           <ListHead title="Marketplace" />
-          {available.length === 0 && <div className="px-3 py-1.5 text-[11px] text-zinc-600">All catalog tools are installed.</div>}
-          {available.map((t) => (
-            <ToolRow key={t.id} spec={t} active={sel.kind === 'tool' && sel.id === t.id} busy={busy[t.id]} onClick={() => setSel({ kind: 'tool', id: t.id })} />
+          <div className="px-2 pb-1">
+            <input
+              className="t-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Search ${TOOL_CATALOG.length} tools…`}
+              spellCheck={false}
+              aria-label="Search tools"
+            />
+          </div>
+          {available.length === 0 && (
+            <div className="px-3 py-1.5 text-[11px] text-zinc-600">{q ? 'No tools match.' : 'All catalog tools are installed.'}</div>
+          )}
+          {categories.map((cat) => (
+            <div key={cat}>
+              <div className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">{cat}</div>
+              {available
+                .filter((t) => t.category === cat)
+                .map((t) => (
+                  <ToolRow key={t.id} spec={t} active={sel.kind === 'tool' && sel.id === t.id} busy={busy[t.id]} onClick={() => setSel({ kind: 'tool', id: t.id })} />
+                ))}
+            </div>
           ))}
         </aside>
 
         {/* Detail */}
         <section className="flex-1 min-w-0 overflow-y-auto">
-          {sel.kind === 'mcp' ? (
+          {(pythonBusy || pythonError || (logs['install:python']?.length ?? 0) > 0) && (
+            <PythonPanel busy={pythonBusy} error={pythonError} log={logs['install:python'] || []} />
+          )}
+          {sel.kind === 'mcp' && mcpApi ? (
             <McpPanel mcp={mcp} available={!!mcpApi} onToggle={toggleMcp} />
           ) : (
             spec && (
@@ -220,6 +274,34 @@ export const ToolsView: React.FC<ToolsViewProps> = ({ projectData, selectedEntit
   );
 };
 
+/** Tool logo; falls back to the initial when the image cannot load (offline). */
+const ToolLogo: React.FC<{ spec: ToolSpec; className: string }> = ({ spec, className }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className={`${className} rounded-[3px] overflow-hidden bg-[var(--t-raised)] border border-[var(--t-border)] flex items-center justify-center font-semibold text-zinc-300 shrink-0`}>
+      {spec.image && !failed ? (
+        <img src={spec.image} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+      ) : (
+        spec.name[0]
+      )}
+    </span>
+  );
+};
+
+const PythonPanel: React.FC<{ busy: boolean; error: string; log: LogLine[] }> = ({ busy, error, log }) => (
+  <div className="max-w-[860px] px-5 pt-4 space-y-2">
+    <div className="t-label">{busy ? 'Installing portable Python…' : error ? 'Python installation failed' : 'Python installed'}</div>
+    {error && <Notice tone="error">{error}</Notice>}
+    <div className="max-h-[140px] overflow-y-auto rounded-[3px] border border-[var(--t-border)] bg-[#0c0c0e] px-2.5 py-2 font-mono text-[11px] leading-[1.55] select-text">
+      {log.map((l, i) => (
+        <div key={i} className={l.stream === 'stderr' ? 'text-rose-300/80' : l.stream === 'info' ? 'text-[var(--t-accent)]' : 'text-zinc-400'}>
+          {l.line}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const ListHead: React.FC<{ title: string }> = ({ title }) => (
   <div className="h-[26px] flex items-center px-3 mt-1">
     <span className="t-label">{title}</span>
@@ -244,9 +326,7 @@ const Pill: React.FC<{ on?: boolean; children: React.ReactNode }> = ({ on, child
 
 const ToolRow: React.FC<{ spec: ToolSpec; active: boolean; busy?: string; version?: string; onClick: () => void }> = ({ spec, active, busy, version, onClick }) => (
   <ListRow active={active} onClick={onClick}>
-    <span className="w-[18px] h-[18px] rounded-[3px] bg-[var(--t-raised)] border border-[var(--t-border)] flex items-center justify-center text-[10px] font-semibold text-zinc-300 shrink-0">
-      {spec.name[0]}
-    </span>
+    <ToolLogo spec={spec} className="w-[18px] h-[18px] text-[10px]" />
     <span className="flex-1 min-w-0">
       <span className="block truncate">{spec.name}</span>
     </span>
@@ -254,9 +334,7 @@ const ToolRow: React.FC<{ spec: ToolSpec; active: boolean; busy?: string; versio
       <Loader2 className="w-3 h-3 animate-spin text-zinc-400" />
     ) : version ? (
       <span className="font-mono text-[10px] text-zinc-600">{version}</span>
-    ) : (
-      <span className="text-[10.5px] text-zinc-500">{spec.category}</span>
-    )}
+    ) : null}
   </ListRow>
 );
 
@@ -300,9 +378,7 @@ const ToolPanel: React.FC<ToolPanelProps> = ({ spec, desktop, pythonFound, state
   return (
     <div className="max-w-[860px] px-5 py-4 space-y-4">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="w-9 h-9 rounded-[4px] bg-[var(--t-raised)] border border-[var(--t-border)] flex items-center justify-center text-[15px] font-semibold text-zinc-200 shrink-0">
-          {spec.name[0]}
-        </div>
+        <ToolLogo spec={spec} className="w-9 h-9 text-[15px]" />
         <div className="flex-1 min-w-[200px]">
           <div className="flex items-baseline gap-2">
             <h2 className="text-[15px] font-semibold text-zinc-50">{spec.name}</h2>
@@ -334,7 +410,7 @@ const ToolPanel: React.FC<ToolPanelProps> = ({ spec, desktop, pythonFound, state
               {confirmUninstall ? 'Click to confirm' : 'Uninstall'}
             </button>
           ) : (
-            <button type="button" className="t-btn t-btn-primary" disabled={!!busy || !pythonFound} onClick={onInstall}>
+            <button type="button" className="t-btn t-btn-primary" disabled={!!busy} onClick={onInstall}>
               {busy === 'install' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               {busy === 'install' ? 'Installing…' : 'Install'}
             </button>
@@ -345,7 +421,10 @@ const ToolPanel: React.FC<ToolPanelProps> = ({ spec, desktop, pythonFound, state
       <p className="text-zinc-300 leading-relaxed">{spec.description}</p>
 
       {desktop && !pythonFound && !isInstalled && (
-        <Notice>Python 3.9 or newer is required to install this tool. Install it from python.org, then press refresh.</Notice>
+        <Notice>
+          Python was not found on this computer. Installing will first download a portable Python 3.12 for TRACE (about 25 MB, checksum-verified,
+          no admin rights, stored in TRACE's data folder).
+        </Notice>
       )}
       {error && <Notice tone="error">{error}</Notice>}
 
@@ -354,7 +433,7 @@ const ToolPanel: React.FC<ToolPanelProps> = ({ spec, desktop, pythonFound, state
           <div className="px-3 py-2.5 flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 min-w-[220px] flex-1">
               <span className="text-[11px] text-zinc-500">Case entity</span>
-              <select
+              <Select
                 className="t-input"
                 value={entityId}
                 onChange={(e) => {
@@ -370,7 +449,7 @@ const ToolPanel: React.FC<ToolPanelProps> = ({ spec, desktop, pythonFound, state
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="flex flex-col gap-1 min-w-[200px] flex-1">
               <span className="text-[11px] text-zinc-500">{spec.input.label}</span>
@@ -452,13 +531,6 @@ const Notice: React.FC<{ tone?: 'warn' | 'error'; children: React.ReactNode }> =
 );
 
 const McpPanel: React.FC<{ mcp: McpStatus | null; available: boolean; onToggle: () => void }> = ({ mcp, available, onToggle }) => {
-  const [copied, setCopied] = useState<string | null>(null);
-  const copy = (key: string, text: string) => {
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied(null), 1500);
-    });
-  };
   const json = mcp
     ? JSON.stringify({ mcpServers: { trace: { command: mcp.command, args: mcp.args, env: mcp.env } } }, null, 2)
     : '';
@@ -503,8 +575,8 @@ const McpPanel: React.FC<{ mcp: McpStatus | null; available: boolean; onToggle: 
               Agents can list cases, search entities, read entity and relationship details, walk neighbourhoods, follow evidence and find paths
               between entities. They cannot create, edit or delete anything. The switch takes effect immediately; no client restart needed.
             </p>
-            <CodeBlock label="Claude Desktop / any MCP client (JSON config)" text={json} copied={copied === 'json'} onCopy={() => copy('json', json)} />
-            <CodeBlock label="Claude Code" text={cli} copied={copied === 'cli'} onCopy={() => copy('cli', cli)} />
+            <CodeBlock label="Claude Desktop / any MCP client (JSON config)" text={json} lang="json" />
+            <CodeBlock label="Claude Code" text={cli} lang="shell" />
             <div className="text-[11px] text-zinc-600">
               Workspace: <span className="font-mono">{mcp.workspacePath}</span>
             </div>
@@ -514,17 +586,3 @@ const McpPanel: React.FC<{ mcp: McpStatus | null; available: boolean; onToggle: 
     </div>
   );
 };
-
-const CodeBlock: React.FC<{ label: string; text: string; copied: boolean; onCopy: () => void }> = ({ label, text, copied, onCopy }) => (
-  <div>
-    <div className="flex items-center mb-1">
-      <span className="t-label">{label}</span>
-      <div className="flex-1" />
-      <button type="button" className="t-btn !h-[22px]" onClick={onCopy}>
-        {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-        {copied ? 'Copied' : 'Copy'}
-      </button>
-    </div>
-    <pre className="rounded-[3px] border border-[var(--t-border)] bg-[#0c0c0e] px-2.5 py-2 font-mono text-[11px] text-zinc-300 overflow-x-auto select-text whitespace-pre">{text}</pre>
-  </div>
-);

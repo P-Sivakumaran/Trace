@@ -42,7 +42,7 @@ Github : https://github.com/megadose/holehe
 
 describe('tool catalog', () => {
   it('has the marketplace tools with pip packages', () => {
-    expect(TOOL_CATALOG.map((t) => t.id)).toEqual(['sherlock', 'maigret', 'holehe']);
+    expect(TOOL_CATALOG.map((t) => t.id)).toEqual(['sherlock', 'maigret', 'holehe', 'ignorant', 'dnsrecon', 'dnstwist']);
     expect(getToolSpec('rm')).toBeUndefined();
   });
 
@@ -56,8 +56,9 @@ describe('tool catalog', () => {
     expect(normaliseToolInput('email', 'nope').ok).toBe(false);
   });
 
-  it('builds argv with the value last', () => {
-    for (const t of TOOL_CATALOG) expect(buildToolArgs(t, 'value').at(-1)).toBe('value');
+  it('builds argv with the input last and never as a flag', () => {
+    for (const t of TOOL_CATALOG.filter((t) => t.input.kind !== 'phone')) expect(buildToolArgs(t, 'value').at(-1)).toBe('value');
+    for (const t of TOOL_CATALOG) expect(buildToolArgs(t, t.input.kind === 'phone' ? '+1 2025550123' : 'value').filter((a) => a.startsWith('-')).every((a) => /^--?[a-zA-Z-]+$/.test(a))).toBe(true);
     expect(buildToolArgs(getToolSpec('holehe')!, 'a@b.co')).toContain('-NP'); // no password-recovery probes
   });
 });
@@ -196,5 +197,119 @@ describe('MCP on/off switch', () => {
     // No app at all (source checkout) → open.
     expect(isMcpAccessEnabled({}, [path.join(dir, 'missing', 'trace-config.json')])).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// ── Ignorant / DNSRecon / dnstwist (output captured from real runs) ─────────
+const IGNORANT_OUT = `Twitter : @palenath
+Github : https://github.com/megadose/ignorant
+For BTC Donations : 1FHDM49QfZX6pJmhjLE5tB2K6CaTLMZpXZ
+
+
+
+********************
+   ++1 2025550123
+********************
+[-] amazon.com
+[+] instagram.com
+[x] snapchat.com
+
+[+] Phone number used, [-] Phone number not used, [x] Rate limit
+3 websites checked in 1.18 seconds
+`;
+const DNSRECON_OUT = `[*] std: Performing General Enumeration against: example.com...
+[*] DNSSEC is configured for example.com
+[*] DNSKEYs:
+[*] \tNSEC ZSK ECDSAP256SHA256 323c9989e94fd06aa7888d7e8fec001b fdedd089830c8963d42c51d28a1b9194
+[*] \t SOA elliott.ns.cloudflare.com 172.64.35.228
+[*] \t NS elliott.ns.cloudflare.com 162.159.44.228
+[*] \t NS elliott.ns.cloudflare.com 2606:4700:58::a29f:2ce4
+[*] \t NS hera.ns.cloudflare.com 108.162.192.162
+[*] \t MX mail.example.com 192.0.2.25
+[*] \t A example.com 172.66.147.243
+[*] \t A example.com 104.20.23.154
+[*] \t AAAA example.com 2606:4700:10::ac42:93f3
+[*] \t A www.example.com 104.20.23.154
+[*] \t CNAME blog.example.com example.github.io
+[*] \t TXT example.com v=spf1 -all
+[*] \t TXT _dmarc.example.com v=DMARC1;p=reject;sp=reject
+[*] Enumerating SRV Records
+[+] 0 Records Found
+`;
+const DNSTWIST_OUT = JSON.stringify([
+  { dns_a: ['104.20.23.154'], domain: 'example.com', fuzzer: '*original' },
+  { dns_a: ['103.168.172.37'], domain: 'exampler.com', fuzzer: 'addition' },
+  { dns_a: ['104.21.23.31'], dns_aaaa: ['2606:4700:3030::6815:171f'], dns_mx: ['mail.example8.com'], domain: 'example8.com', fuzzer: 'addition' },
+]);
+
+describe('new catalog tools', () => {
+  it('validates domain and phone inputs', () => {
+    expect(normaliseToolInput('domain', 'https://www.Example.COM:8080/a?b#c')).toEqual({ ok: true, value: 'www.example.com' });
+    expect(normaliseToolInput('domain', 'example.com.')).toEqual({ ok: true, value: 'example.com' });
+    for (const bad of ['', 'localhost', '-x.com', 'a b.com', 'example.com; rm -rf', '1.2.3.4', 'x'.repeat(300) + '.com']) {
+      expect(normaliseToolInput('domain', bad).ok, bad).toBe(false);
+    }
+    expect(normaliseToolInput('phone', '+1   202-555-0123')).toEqual({ ok: true, value: '+1 2025550123' });
+    expect(normaliseToolInput('phone', '+44 7911 123456')).toEqual({ ok: true, value: '+44 7911123456' });
+    for (const bad of ['2025550123', '+12025550123', '+1 12', '--help', '+1 abc']) expect(normaliseToolInput('phone', bad).ok, bad).toBe(false);
+  });
+
+  it('builds argv', () => {
+    expect(buildToolArgs(getToolSpec('ignorant')!, '+1 2025550123')).toEqual(['--only-used', '--no-color', '--no-clear', '-T', '10', '+1', '2025550123']);
+    expect(buildToolArgs(getToolSpec('dnsrecon')!, 'example.com')).toEqual(['--lifetime', '5', '-d', 'example.com']);
+    expect(buildToolArgs(getToolSpec('dnstwist')!, 'example.com').slice(-1)).toEqual(['example.com']);
+  });
+
+  it('parses ignorant like holehe, with a phone target', () => {
+    expect(parseHoleheHits(IGNORANT_OUT).map((h) => h.site)).toEqual(['instagram.com']);
+    const b = toolOutputToBatch(getToolSpec('ignorant')!, { value: '+1 2025550123' }, IGNORANT_OUT);
+    expect(b.entities[0]).toMatchObject({ type: 'phone', name: '+1 2025550123' });
+    expect(b.entities[1]).toMatchObject({ type: 'account', attributes: { platform: 'instagram.com', phone: '+1 2025550123' } });
+    expect(b.relationships[0].type).toBe('registered_on');
+  });
+
+  it('turns dnsrecon records into hosts, IPs and links; keeps TXT/SOA as references', () => {
+    const b = toolOutputToBatch(getToolSpec('dnsrecon')!, { value: 'example.com' }, DNSRECON_OUT);
+    const name = new Map(b.entities.map((e) => [e.key, `${e.type}:${e.name}`]));
+    const links = b.relationships.map((r) => `${name.get(r.source)} -${r.type}> ${name.get(r.target)}`);
+    expect(b.entities.filter((e) => e.type === 'ip').map((e) => e.name).sort()).toEqual(
+      ['104.20.23.154', '108.162.192.162', '162.159.44.228', '172.66.147.243', '192.0.2.25', '2606:4700:10::ac42:93f3', '2606:4700:58::a29f:2ce4'].sort(),
+    );
+    expect(links).toContain('domain:example.com -resolves_to> ip:172.66.147.243');
+    expect(links).toContain('domain:example.com -uses_nameserver> domain:elliott.ns.cloudflare.com');
+    expect(links).toContain('domain:elliott.ns.cloudflare.com -resolves_to> ip:162.159.44.228');
+    expect(links).toContain('domain:example.com -mail_handled_by> domain:mail.example.com');
+    expect(links).toContain('domain:example.com -has_subdomain> domain:www.example.com');
+    expect(links).toContain('domain:www.example.com -resolves_to> ip:104.20.23.154');
+    expect(links).toContain('domain:blog.example.com -alias_of> domain:example.github.io');
+    // the scanned domain is the input entity, never duplicated
+    expect(b.entities.filter((e) => e.name === 'example.com')).toHaveLength(1);
+    // one 104.20.23.154 entity shared by example.com and www
+    expect(b.entities.filter((e) => e.name === '104.20.23.154')).toHaveLength(1);
+    expect(b.unmapped.map((u) => u.reason).every((r) => /record/.test(r))).toBe(true);
+    expect(b.unmapped.length).toBe(3); // SOA + 2 TXT
+    expect(new Set(links).size).toBe(links.length);
+  });
+
+  it('matches the scanned domain to an existing entity in the review', () => {
+    const project = { project: { id: 'p', type: 'project' as const, name: 'P', created_at: '', updated_at: '', markdownBody: '' }, entities: [{ id: 'd1', type: 'domain' as const, name: 'Example.com', aliases: [], created_at: '', updated_at: '', attributes: {}, tags: [], markdownBody: '' }], relationships: [], sources: [], notes: [] };
+    const plan = planImport(toolOutputToBatch(getToolSpec('dnsrecon')!, { value: 'example.com', entity: { type: 'domain', name: 'Example.com' } }, DNSRECON_OUT), project);
+    expect(plan.entities[0]).toMatchObject({ decision: 'link-existing', duplicateOf: { id: 'd1' } });
+  });
+
+  it('turns dnstwist JSON into candidate look-alike domains, skipping the original', () => {
+    const b = toolOutputToBatch(getToolSpec('dnstwist')!, { value: 'example.com' }, DNSTWIST_OUT);
+    expect(b.entities.map((e) => e.name)).toEqual(['example.com', 'exampler.com', 'example8.com']);
+    expect(b.entities[2]).toMatchObject({ type: 'domain', attributes: { fuzzer: 'addition', dns_a: '104.21.23.31', dns_mx: 'mail.example8.com' }, tags: ['dnstwist', 'lookalike'] });
+    expect(b.relationships.every((r) => r.type === 'lookalike_domain' && r.status === 'candidate')).toBe(true);
+  });
+
+  it('survives truncated or invalid dnstwist output and caps huge results', () => {
+    expect(toolOutputToBatch(getToolSpec('dnstwist')!, { value: 'example.com' }, '[{"domain": "a.com"').warnings[0]).toMatch(/could not be parsed/);
+    const many = JSON.stringify(Array.from({ length: 450 }, (_, i) => ({ domain: `ex${i}.com`, fuzzer: 'addition', dns_a: ['1.1.1.1'] })));
+    const b = toolOutputToBatch(getToolSpec('dnstwist')!, { value: 'example.com' }, many);
+    expect(b.entities.length).toBe(301);
+    expect(b.unmapped.length).toBe(150);
+    expect(b.warnings.some((w) => /300/.test(w))).toBe(true);
   });
 });

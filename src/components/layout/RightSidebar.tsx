@@ -3,18 +3,22 @@ import { Entity, ENTITY_TYPES, ProjectData, RELATIONSHIP_STATUSES } from '@/type
 import { getEntityTypeColor, getEntityTypeLabel } from '@/components/common/EntityIcon';
 import { StatusBadge, StatusGlyph } from '@/components/common/StatusBadge';
 import { getTransformsForEntity } from '@/services/transforms/registry';
-import { ChevronRight, ExternalLink, Link2, Loader2, Play, PanelRightClose } from 'lucide-react';
+import { ChevronRight, ExternalLink, Link2, Loader2, Play, Plus } from 'lucide-react';
 
 interface RightSidebarProps {
   isOpen: boolean;
-  onToggle: () => void;
   projectData: ProjectData;
   selectedEntityId?: string;
   selectedRelationshipId?: string;
   onOpenEntity: (entityId: string) => void;
   onOpenRelationship: (relId: string) => void;
   onOpenSource: (sourceId: string) => void;
+  onOpenNote?: (noteId: string) => void;
   onCreateRelationship: (sourceId: string) => void;
+  /** Creates a note mentioning the entity and opens it. */
+  onAddNoteForEntity?: (entityId: string) => void;
+  /** Cites a source on a relationship; sourceId null = create a new source. */
+  onAddEvidence?: (relationshipId: string, sourceId: string | null) => void;
   onRunTransform?: (entity: Entity, transformId: string) => void;
   activeRunningTransformId?: string;
   width?: number;
@@ -61,20 +65,51 @@ const Section: React.FC<{
   );
 };
 
+/** "+" button in a section header that opens a small menu (fixed-positioned so the scroll area never clips it). */
+const AddMenu: React.FC<{ title: string; children: (close: () => void) => React.ReactNode }> = ({ title, children }) => {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const close = () => setPos(null);
+  return (
+    <>
+      <button
+        type="button"
+        className="t-icon-btn !w-5 !h-5"
+        title={title}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setPos(pos ? null : { top: r.bottom + 4, right: window.innerWidth - r.right });
+        }}
+      >
+        <Plus />
+      </button>
+      {pos && (
+        <>
+          <div className="fixed inset-0 z-[79]" onMouseDown={close} />
+          <div className="t-menu fixed z-[80] w-[260px] max-h-[280px] overflow-y-auto" style={{ top: pos.top, right: pos.right }}>
+            {children(close)}
+          </div>
+        </>
+      )}
+    </>
+  );
+};
+
 const Muted: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="px-3 py-1 text-[11.5px] text-zinc-600">{children}</div>
 );
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
   isOpen,
-  onToggle,
   projectData,
   selectedEntityId,
   selectedRelationshipId,
   onOpenEntity,
   onOpenRelationship,
   onOpenSource,
+  onOpenNote,
   onCreateRelationship,
+  onAddNoteForEntity,
+  onAddEvidence,
   onRunTransform,
   activeRunningTransformId,
   width = 320,
@@ -291,18 +326,80 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           })}
         </Section>
 
-        <Section id="evidence" title="Evidence" count={evidenceIds.length} collapsed={collapsed} onToggle={toggleSection}>
+        <Section
+          id="evidence"
+          title="Evidence"
+          count={evidenceIds.length}
+          collapsed={collapsed}
+          onToggle={toggleSection}
+          right={
+            onAddEvidence && (
+              <AddMenu title="Add a source to one of this entity’s relationships">
+                {(close) => (
+                  <>
+                    <div className="px-2.5 py-1 t-label">Cite a new source on…</div>
+                    {rels.length === 0 && (
+                      <button
+                        type="button"
+                        className="t-menu-item"
+                        onClick={() => {
+                          close();
+                          onCreateRelationship(selectedEntity.id);
+                        }}
+                      >
+                        <Link2 />
+                        <span>No relationships yet — link this entity…</span>
+                      </button>
+                    )}
+                    {rels.map((r) => {
+                      const outgoing = r.source_entity === selectedEntity.id;
+                      const other = projectData.entities.find((e) => e.id === (outgoing ? r.target_entity : r.source_entity));
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className="t-menu-item"
+                          onClick={() => {
+                            close();
+                            onAddEvidence(r.id, null);
+                          }}
+                        >
+                          <span className="font-mono text-zinc-600 w-3 shrink-0">{outgoing ? '→' : '←'}</span>
+                          <span className="truncate flex-1">{other?.name || (outgoing ? r.target_entity : r.source_entity)}</span>
+                          <span className="font-mono text-[10px] text-zinc-500 shrink-0 max-w-[80px] truncate">{r.type}</span>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+              </AddMenu>
+            )
+          }
+        >
           {evidenceIds.length === 0 ? <Muted>No sources cited on this entity’s relationships.</Muted> : <SourceRows ids={evidenceIds} />}
         </Section>
 
-        <Section id="notes" title="Notes" count={notes.length} collapsed={collapsed} onToggle={toggleSection}>
+        <Section
+          id="notes"
+          title="Notes"
+          count={notes.length}
+          collapsed={collapsed}
+          onToggle={toggleSection}
+          right={
+            onAddNoteForEntity && (
+              <button type="button" className="t-icon-btn !w-5 !h-5" title="New note about this entity" onClick={() => onAddNoteForEntity(selectedEntity.id)}>
+                <Plus />
+              </button>
+            )
+          }
+        >
           {notes.length === 0 ? (
             <Muted>
               No notes mention <span className="font-mono">[[{selectedEntity.name}]]</span>.
             </Muted>
           ) : (
             notes.map((n) => (
-              <div key={n.id} className="t-row !pl-3" title={n.title}>
+              <div key={n.id} className="t-row !pl-3" title={n.title} onClick={() => onOpenNote?.(n.id)}>
                 <span className="truncate flex-1">{n.title}</span>
                 <span className="font-mono text-[10px] text-zinc-600">{(n.updated_at || '').slice(0, 10)}</span>
               </div>
@@ -379,7 +476,53 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </dl>
         </Section>
 
-        <Section id="rel-evidence" title="Evidence" count={selectedRel.evidence.length} collapsed={collapsed} onToggle={toggleSection}>
+        <Section
+          id="rel-evidence"
+          title="Evidence"
+          count={selectedRel.evidence.length}
+          collapsed={collapsed}
+          onToggle={toggleSection}
+          right={
+            onAddEvidence && (
+              <AddMenu title="Cite a source on this relationship">
+                {(close) => {
+                  const uncited = projectData.sources.filter((src) => !selectedRel.evidence.includes(src.id));
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className="t-menu-item"
+                        onClick={() => {
+                          close();
+                          onAddEvidence(selectedRel.id, null);
+                        }}
+                      >
+                        <Plus />
+                        <span>New source…</span>
+                      </button>
+                      {uncited.length > 0 && <div className="t-menu-sep" />}
+                      {uncited.length > 0 && <div className="px-2.5 py-1 t-label">Cite existing</div>}
+                      {uncited.slice(0, 20).map((src) => (
+                        <button
+                          key={src.id}
+                          type="button"
+                          className="t-menu-item"
+                          onClick={() => {
+                            close();
+                            onAddEvidence(selectedRel.id, src.id);
+                          }}
+                        >
+                          <span className="truncate flex-1">{src.title}</span>
+                          <span className="font-mono text-[10px] text-zinc-500 shrink-0">{src.source_type}</span>
+                        </button>
+                      ))}
+                    </>
+                  );
+                }}
+              </AddMenu>
+            )
+          }
+        >
           {selectedRel.evidence.length === 0 ? (
             <Muted>No supporting sources. Unsourced claims should stay unverified.</Muted>
           ) : (
@@ -455,9 +598,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           {selectedEntity ? 'Entity' : selectedRel ? 'Relationship' : 'Case'}
           {selectedEntity || selectedRel ? '' : ' summary'}
         </span>
-        <button type="button" onClick={onToggle} className="t-icon-btn !w-5 !h-5" title="Hide inspector  (⌘])">
-          <PanelRightClose />
-        </button>
       </div>
       <div className="flex-1 overflow-y-auto">{body}</div>
     </aside>

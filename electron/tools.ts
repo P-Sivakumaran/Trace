@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { TOOL_CATALOG, buildToolArgs, getToolSpec, normaliseToolInput, type ToolSpec } from '../src/services/tools/catalog';
+import { hasPortablePython, installPortablePython, portablePythonExe } from './python';
 
 const MAX_OUTPUT = 5 * 1024 * 1024;
 const isWin = process.platform === 'win32';
@@ -26,8 +27,14 @@ export interface ToolStatus {
 
 export interface PythonInfo {
   found: boolean;
+  /** Display form, e.g. "python3" or the portable interpreter path. */
   command?: string;
   version?: string;
+  /** True when it is TRACE's own portable Python. */
+  managed?: boolean;
+  /** Executable and leading args (kept separate: paths may contain spaces). */
+  exe?: string;
+  pre?: string[];
 }
 
 type Log = (line: string, stream: 'stdout' | 'stderr' | 'info') => void;
@@ -57,7 +64,14 @@ export class ToolManager {
   private running = new Map<string, ChildProcess>();
   private python: PythonInfo | null = null;
 
-  constructor(private readonly root: string) {}
+  /**
+   * @param root        folder for tool virtual environments
+   * @param pythonRoot  folder for TRACE's portable Python (installed on demand)
+   */
+  constructor(
+    private readonly root: string,
+    private readonly pythonRoot: string = path.join(path.dirname(root), 'python'),
+  ) {}
 
   private dir(spec: ToolSpec) {
     return path.join(this.root, spec.id);
@@ -69,23 +83,38 @@ export class ToolManager {
     return path.join(this.dir(spec), '.trace-tool.json');
   }
 
+  private probe(exe: string, pre: string[]): Promise<string | null> {
+    return new Promise((resolve) =>
+      execFile(exe, [...pre, '--version'], { timeout: 8000 }, (err, stdout, stderr) => {
+        const m = !err && /Python (3)\.(\d+)\.(\d+)/.exec(`${stdout}${stderr}`);
+        resolve(m && Number(m[2]) >= 9 ? `${m[1]}.${m[2]}.${m[3]}` : null);
+      }),
+    );
+  }
+
+  /** TRACE's portable Python first (known-good), then the system one. */
   async findPython(force = false): Promise<PythonInfo> {
     if (this.python && !force) return this.python;
+    if (hasPortablePython(this.pythonRoot)) {
+      const exe = portablePythonExe(this.pythonRoot);
+      const v = await this.probe(exe, []);
+      if (v) return (this.python = { found: true, managed: true, exe, pre: [], command: 'TRACE portable Python', version: v });
+    }
     const candidates: [string, string[]][] = isWin
       ? [['py', ['-3']], ['python', []], ['python3', []]]
       : [['python3', []], ['python', []]];
     for (const [cmd, pre] of candidates) {
-      const out = await new Promise<string | null>((resolve) =>
-        execFile(cmd, [...pre, '--version'], { timeout: 5000 }, (err, stdout, stderr) => resolve(err ? null : `${stdout}${stderr}`.trim())),
-      );
-      const m = out && /Python (3)\.(\d+)\.(\d+)/.exec(out);
-      if (m && Number(m[2]) >= 9) {
-        this.python = { found: true, command: [cmd, ...pre].join(' '), version: `${m[1]}.${m[2]}.${m[3]}` };
-        return this.python;
-      }
+      const v = await this.probe(cmd, pre);
+      if (v) return (this.python = { found: true, managed: false, exe: cmd, pre, command: [cmd, ...pre].join(' '), version: v });
     }
-    this.python = { found: false };
-    return this.python;
+    return (this.python = { found: false });
+  }
+
+  /** Downloads TRACE's portable Python (verified) when no usable Python exists. */
+  async installPython(log: Log): Promise<{ ok: boolean; error?: string }> {
+    const r = await installPortablePython(this.pythonRoot, log);
+    await this.findPython(true);
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
   }
 
   status(): ToolStatus[] {
@@ -153,14 +182,19 @@ export class ToolManager {
   async install(id: string, log: Log): Promise<{ ok: boolean; error?: string }> {
     const spec = getToolSpec(id);
     if (!spec) return { ok: false, error: 'Unknown tool' };
-    const py = await this.findPython(true);
-    if (!py.found || !py.command) return { ok: false, error: 'Python 3.9+ was not found. Install Python from python.org and try again.' };
+    let py = await this.findPython(true);
+    if (!py.found) {
+      log('Python 3.9+ not found on this computer — installing a portable Python for TRACE.', 'info');
+      const r = await this.installPython(log);
+      if (!r.ok) return { ok: false, error: r.error };
+      py = await this.findPython(true);
+    }
+    if (!py.found || !py.exe) return { ok: false, error: 'Python is not available.' };
     const dir = this.dir(spec);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(this.root, { recursive: true });
-    const [pyCmd, ...pyPre] = py.command.split(' ');
     log(`Creating virtual environment (${py.command} ${py.version})…`, 'info');
-    const venv = await this.exec(pyCmd, [...pyPre, '-m', 'venv', dir], log, { timeoutMs: 120_000 });
+    const venv = await this.exec(py.exe, [...(py.pre ?? []), '-m', 'venv', dir], log, { timeoutMs: 120_000 });
     if (venv.code !== 0) {
       fs.rmSync(dir, { recursive: true, force: true });
       return { ok: false, error: 'Could not create a Python virtual environment.' };

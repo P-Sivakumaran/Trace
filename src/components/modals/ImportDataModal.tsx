@@ -6,6 +6,7 @@ import type { ProjectData } from '@/types';
 import { IMPORT_ADAPTERS, detectAdapter } from '@/services/import/adapters';
 import type { ImportBatch } from '@/services/import/types';
 import { buildImportRecords, planImport, type EntityDecision, type ImportPlan, type ImportRecords } from '@/services/import/plan';
+import { Select } from '@/components/common/Select';
 
 interface ImportDataModalProps {
   isOpen: boolean;
@@ -145,7 +146,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
         {file && (
           <>
             <span className="text-zinc-500 text-[11px]">Format</span>
-            <select
+            <Select
               value={adapterId}
               onChange={(e) => {
                 setAdapterId(e.target.value);
@@ -158,7 +159,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
                   {a.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </>
         )}
         {!file && <span className="text-[11px] text-zinc-500">SpiderFoot CSV, CSV with type/value columns, indicator list (.txt) or TRACE import JSON</span>}
@@ -203,7 +204,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
                     ≈ {p.duplicateOf.name}
                   </span>
                 )}
-                <select
+                <Select
                   value={p.decision}
                   onChange={(e) => setDecision(i, e.target.value as EntityDecision)}
                   className="t-input !h-[22px] !py-0 !w-[132px] shrink-0"
@@ -211,7 +212,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
                   <option value="create">Create new</option>
                   {p.duplicateOf && <option value="link-existing">Use existing</option>}
                   <option value="skip">Skip</option>
-                </select>
+                </Select>
               </div>
             ))}
           </div>

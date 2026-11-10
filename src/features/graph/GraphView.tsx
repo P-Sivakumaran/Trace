@@ -72,6 +72,7 @@ import {
   graphNodeColor,
   nodeDiameter,
 } from './graphTheme';
+import { Select } from '@/components/common/Select';
 
 const ToolSep: React.FC = () => <div className="w-px h-4 bg-[var(--t-border)] mx-1 shrink-0" />;
 
@@ -1260,6 +1261,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       scheduleLabelUpdate();
     });
 
+    // Pointer cursor over anything clickable on the canvas
+    cy.on('mouseover', 'node, edge', () => {
+      const c = containerRef.current;
+      if (c && !c.classList.contains('cursor-crosshair')) c.style.cursor = 'pointer';
+    });
+    cy.on('mouseout', 'node, edge', () => {
+      if (containerRef.current) containerRef.current.style.cursor = '';
+    });
+
     // Hover handlers for edges
     cy.on('mouseover', 'edge', (evt: EventObject) => {
       const edge = evt.target;
@@ -2095,20 +2105,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
         <ToolSep />
 
         {isCompact ? (
-          <select
+          <Select
             value={layoutName}
             onChange={(e) => {
               setLayoutName(e.target.value);
               runLayout(e.target.value);
             }}
-            className="t-input !w-auto !pr-1 cursor-default"
+            className="t-input !w-auto !pr-1 cursor-pointer"
             title="Layout"
           >
             <option value="force">Force</option>
             <option value="breadthfirst">Tree</option>
             <option value="concentric">Radial</option>
             <option value="grid">Grid</option>
-          </select>
+          </Select>
         ) : (
         <div className="flex items-stretch h-[24px] border border-[var(--t-border)] rounded-[3px] overflow-hidden" role="radiogroup" aria-label="Layout">
           {[
@@ -2260,7 +2270,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   const checked = selectedEntityTypes.has(t.type);
                   const n = typeCounts.get(t.type) || 0;
                   return (
-                    <label key={t.type} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-default">
+                    <label key={t.type} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-pointer">
                       <input type="checkbox" checked={checked} onChange={() => toggleEntityType(t.type)} className="accent-[var(--t-accent)] w-3 h-3" />
                       <span className="t-swatch" style={{ background: t.color, opacity: checked ? 1 : 0.35 }} />
                       <span className={`flex-1 ${checked ? 'text-zinc-200' : 'text-zinc-600'}`}>{t.label}</span>
@@ -2276,7 +2286,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 {RELATIONSHIP_STATUSES.map((s) => {
                   const checked = selectedStatuses.has(s.status);
                   return (
-                    <label key={s.status} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-default">
+                    <label key={s.status} className="flex items-center gap-2 px-2.5 h-[22px] hover:bg-[var(--t-hover)] cursor-pointer">
                       <input type="checkbox" checked={checked} onChange={() => toggleStatus(s.status)} className="accent-[var(--t-accent)] w-3 h-3" />
                       <StatusGlyph status={s.status} width={14} />
                       <span className={`flex-1 ${checked ? 'text-zinc-200' : 'text-zinc-600'}`}>{s.label}</span>

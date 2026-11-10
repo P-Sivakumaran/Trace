@@ -22,6 +22,7 @@ import {
   Check,
   SlidersHorizontal,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface EntityEditorProps {
   entity: Entity;
@@ -376,7 +377,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={photoUrlValue}
                 onChange={(e) => setPhotoUrlValue(e.target.value)}
                 placeholder="Paste image URL (https://...)..."
-                className="flex-1 px-3 py-1 bg-[var(--t-bg)] border border-obsidian-border rounded text-xs text-zinc-200 focus:outline-none focus:border-[var(--t-accent)]"
+                className="t-input flex-1"
               />
               <button
                 type="button"
@@ -406,11 +407,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={draft.name}
                 onChange={(e) => updateDraft({ name: e.target.value })}
                 placeholder="Enter entity name..."
-                className={`w-full px-3 py-1.5 bg-[var(--t-panel)] border rounded-lg text-sm text-obsidian-text focus:outline-none ${
-                  !draft.name.trim()
-                    ? 'border-rose-500/80 focus:border-rose-500'
-                    : 'border-obsidian-border focus:border-[var(--t-accent)]'
-                }`}
+                className={`t-input ${!draft.name.trim() ? '!border-rose-500/80 focus:!border-rose-500' : ''}`}
               />
               {!draft.name.trim() && (
                 <p className="text-[11px] text-rose-400 mt-1">Name is required and cannot be empty.</p>
@@ -422,7 +419,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
               <label className="block text-[11px] text-zinc-500 mb-1">
                 Entity Type *
               </label>
-              <select
+              <Select
                 value={draft.type}
                 onChange={(e) => updateDraft({ type: e.target.value as EntityType })}
                 className="t-input"
@@ -432,7 +429,7 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                     {t.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -500,12 +497,12 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={aliasInput}
                 onChange={(e) => setAliasInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAlias())}
-                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
+                className="t-input flex-1"
               />
               <button
                 type="button"
                 onClick={addAlias}
-                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
+                className="t-btn shrink-0"
               >
                 Add
               </button>
@@ -542,12 +539,12 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
+                className="t-input flex-1"
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-3 py-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors"
+                className="t-btn shrink-0"
               >
                 Add
               </button>
@@ -571,20 +568,20 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
 
               return (
                 <div key={k} className="flex items-center gap-2">
-                  <span className="w-1/3 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg font-mono text-xs text-obsidian-muted truncate">
+                  <span className="t-input w-1/3 flex items-center font-mono text-zinc-400 truncate">
                     {k}
                   </span>
                   <input
                     type="text"
                     value={String(v)}
                     onChange={(e) => updateAttributeVal(k, e.target.value)}
-                    className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
+                    className="t-input flex-1"
                   />
                   {hasMap && String(v).trim().length > 0 && (
                     <button
                       type="button"
                       onClick={() => openMapForLocation(String(v))}
-                      className="px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-lg flex items-center space-x-1 text-xs transition-colors shrink-0"
+                      className="t-btn shrink-0 !text-rose-400 !border-rose-500/30"
                       title="View on Map"
                     >
                       <MapPin className="w-3.5 h-3.5" />
@@ -658,13 +655,13 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
                 value={newAttrVal}
                 onChange={(e) => setNewAttrVal(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
-                className="flex-1 px-3 py-1.5 bg-[var(--t-panel)] border border-obsidian-border rounded-lg text-xs text-obsidian-text focus:outline-none focus:border-[var(--t-accent)]"
+                className="t-input flex-1"
               />
 
               <button
                 type="button"
                 onClick={addAttribute}
-                className="px-3.5 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-hover hover:bg-[var(--t-hover)] text-obsidian-text border border-obsidian-border rounded-lg transition-colors font-medium shrink-0"
+                className="t-btn shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add</span>
@@ -699,9 +696,9 @@ export const EntityEditor: React.FC<EntityEditorProps> = ({
             <button
               type="button"
               onClick={() => onCreateRelationship(draft.id)}
-              className="px-3 py-1.5 flex items-center space-x-1.5 text-xs bg-obsidian-accent hover:bg-obsidian-accentHover text-white rounded-lg font-medium shadow-sm transition-colors"
+              className="t-btn t-btn-primary"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               <span>Add Relationship</span>
             </button>
           </div>

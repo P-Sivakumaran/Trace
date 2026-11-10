@@ -196,7 +196,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               }
             }}
             style={{ WebkitAppRegion: 'no-drag' as any }}
-            className={`group relative h-full flex items-center text-[12px] cursor-default border-r border-[var(--t-border)] shrink-0 ${
+            className={`group relative h-full flex items-center text-[12px] cursor-pointer border-r border-[var(--t-border)] shrink-0 ${
               tab.isPinned ? 'px-2.5 gap-1' : 'pl-2.5 pr-1.5 gap-1.5 max-w-[200px] min-w-[96px]'
             } ${
               isActive

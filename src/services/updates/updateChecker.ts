@@ -123,3 +123,100 @@ export async function checkForUpdates(
   }
   return { status: 'up-to-date', installed, latest };
 }
+
+// ── Release notes (changelog) for one version ──────────────────────────────
+
+export type ReleaseNotesResult =
+  | { status: 'ok'; release: ReleaseInfo }
+  /** No published release for this version (e.g. a local or not-yet-released build). */
+  | { status: 'not-found'; version: string }
+  | { status: 'error'; version: string; reason: 'network' | 'rate-limited' | 'malformed' | 'http'; message: string };
+
+/** Fetches the GitHub release tagged `v<version>`. Never throws. */
+export async function fetchReleaseNotes(
+  version: string,
+  opts: { fetchImpl?: FetchLike; timeoutMs?: number } = {},
+): Promise<ReleaseNotesResult> {
+  const v = version.replace(/^v/, '');
+  if (!parseSemver(v)) return { status: 'not-found', version: v };
+  const fetchImpl: FetchLike = opts.fetchImpl ?? ((u, i) => fetch(u, i));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10000);
+  let res: Response;
+  try {
+    res = await fetchImpl(`https://api.github.com/repos/${RELEASES_REPO}/releases/tags/v${encodeURIComponent(v)}`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    return {
+      status: 'error',
+      version: v,
+      reason: 'network',
+      message: err?.name === 'AbortError' ? 'The request to GitHub timed out.' : 'Could not reach GitHub. Check your internet connection.',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status === 404) return { status: 'not-found', version: v };
+  if (res.status === 429 || (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0')) {
+    return { status: 'error', version: v, reason: 'rate-limited', message: 'GitHub API rate limit reached. Try again later.' };
+  }
+  if (!res.ok) return { status: 'error', version: v, reason: 'http', message: `GitHub responded with HTTP ${res.status}.` };
+  try {
+    const rel = (await res.json()) as Record<string, unknown>;
+    const tag = typeof rel?.tag_name === 'string' ? rel.tag_name : '';
+    if (!parseSemver(tag) || rel.draft === true) return { status: 'not-found', version: v };
+    return {
+      status: 'ok',
+      release: {
+        version: tag.replace(/^v/, ''),
+        tag,
+        name: typeof rel.name === 'string' && rel.name ? rel.name : tag,
+        url: safeReleaseUrl(rel.html_url, tag),
+        notes: typeof rel.body === 'string' ? rel.body : '',
+        publishedAt: typeof rel.published_at === 'string' ? rel.published_at : '',
+        prerelease: rel.prerelease === true || (parseSemver(tag)?.prerelease.length ?? 0) > 0,
+      },
+    };
+  } catch {
+    return { status: 'error', version: v, reason: 'malformed', message: 'GitHub returned an unexpected response.' };
+  }
+}
+
+// ── "What's new" bookkeeping ───────────────────────────────────────────────
+
+export const LAST_SEEN_KEY = 'trace_last_seen_version';
+const NOTES_CACHE_PREFIX = 'trace_release_notes:';
+
+/**
+ * Decides whether to show "What's new" at startup.
+ * - first run (nothing recorded): record the version, show nothing;
+ * - same version: nothing;
+ * - newer than last seen: show the notes of the current version.
+ * Downgrades just update the record.
+ */
+export function whatsNewDecision(lastSeen: string | null, current: string): 'record' | 'show' | 'none' {
+  if (!parseSemver(current)) return 'none';
+  if (!lastSeen || !parseSemver(lastSeen)) return 'record';
+  const c = compareSemver(current, lastSeen);
+  return c > 0 ? 'show' : c < 0 ? 'record' : 'none';
+}
+
+export function readCachedNotes(version: string): ReleaseInfo | null {
+  try {
+    const raw = localStorage.getItem(NOTES_CACHE_PREFIX + version);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed.notes === 'string' && parsed.version === version ? (parsed as ReleaseInfo) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheNotes(release: ReleaseInfo) {
+  try {
+    localStorage.setItem(NOTES_CACHE_PREFIX + release.version, JSON.stringify(release));
+  } catch {
+    /* storage unavailable */
+  }
+}

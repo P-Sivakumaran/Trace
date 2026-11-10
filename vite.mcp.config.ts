@@ -12,7 +12,6 @@ const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __BUILD_HASH__: JSON.stringify(''),
   },
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },

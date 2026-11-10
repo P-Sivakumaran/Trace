@@ -9,7 +9,8 @@ declare module 'react' {
 
 declare global {
   const __APP_VERSION__: string;
-  const __BUILD_HASH__: string;
+  /** `YYYYMMDDHHMMSS-<git commit>`, embedded at build time. */
+  const __BUILD_ID__: string;
 }
 
 export type EntityType =
@@ -272,6 +273,26 @@ export interface ProjectData {
   sources: Source[];
   notes: Note[];
 }
+
+/** How much space TRACE's data takes (desktop: files on disk; web: browser storage). */
+export interface StorageUsage {
+  kind: 'disk' | 'browser';
+  location: string;
+  projects: { id: string; name: string; bytes: number; files?: number }[];
+  projectsBytes: number;
+  /** Cases removed from TRACE but kept on disk (desktop only). */
+  removedBytes: number;
+  toolsBytes: number;
+  pythonBytes: number;
+  /** Everything above added up. */
+  totalBytes: number;
+  /** Browser only: bytes used / available according to the browser. */
+  browserUsageBytes?: number;
+  browserQuotaBytes?: number;
+}
+
+/** What happens to a case's files when it is removed (desktop). */
+export type ProjectRemoveMode = 'delete' | 'keep' | 'trash';
 
 export interface GraphLayout {
   positions: Record<string, { x: number; y: number }>;

@@ -132,3 +132,50 @@ describe('checkForUpdates', () => {
     expect(called).toBe(false);
   });
 });
+
+import { fetchReleaseNotes, whatsNewDecision } from '../services/updates/updateChecker';
+
+describe('release notes for one version', () => {
+  const rel = (extra: Record<string, unknown> = {}) => ({
+    tag_name: 'v0.2.0-alpha.1', name: 'Trace v0.2.0-alpha.1', html_url: 'https://github.com/dlxarl/Trace/releases/tag/v0.2.0-alpha.1',
+    body: '## Highlights\n- thing', published_at: '2026-11-10T00:00:00Z', prerelease: true, draft: false, ...extra,
+  });
+  const ok = (body: unknown, status = 200, headers: Record<string, string> = {}) => async () =>
+    new Response(JSON.stringify(body), { status, headers });
+
+  it('returns the release for the exact tag', async () => {
+    let url = '';
+    const r = await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: async (u) => { url = u; return new Response(JSON.stringify(rel())); } });
+    expect(url).toBe('https://api.github.com/repos/dlxarl/Trace/releases/tags/v0.2.0-alpha.1');
+    expect(r).toMatchObject({ status: 'ok', release: { version: '0.2.0-alpha.1', prerelease: true, notes: expect.stringContaining('Highlights') } });
+  });
+
+  it('distinguishes not-found from errors', async () => {
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: ok({}, 404) })).toEqual({ status: 'not-found', version: '0.2.0-alpha.1' });
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: ok(rel({ draft: true })) })).toMatchObject({ status: 'not-found' });
+    expect(await fetchReleaseNotes('dev')).toMatchObject({ status: 'not-found' });
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: ok({}, 403, { 'x-ratelimit-remaining': '0' }) })).toMatchObject({ status: 'error', reason: 'rate-limited' });
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: ok({}, 500) })).toMatchObject({ status: 'error', reason: 'http' });
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: async () => { throw new TypeError('offline'); } })).toMatchObject({ status: 'error', reason: 'network' });
+    expect(await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: async () => new Response('<html>') })).toMatchObject({ status: 'error', reason: 'malformed' });
+  });
+
+  it('ignores non-GitHub release URLs', async () => {
+    const r = await fetchReleaseNotes('0.2.0-alpha.1', { fetchImpl: ok(rel({ html_url: 'https://evil.example/x' })) });
+    expect(r.status === 'ok' && r.release.url).toBe('https://github.com/dlxarl/Trace/releases/tag/v0.2.0-alpha.1');
+  });
+});
+
+describe("what's new decision", () => {
+  it('shows only after an upgrade', () => {
+    expect(whatsNewDecision(null, '0.2.0-alpha.1')).toBe('record'); // first run
+    expect(whatsNewDecision('garbage', '0.2.0-alpha.1')).toBe('record');
+    expect(whatsNewDecision('0.2.0-alpha.1', '0.2.0-alpha.1')).toBe('none');
+    expect(whatsNewDecision('0.1.0-alpha.2', '0.2.0-alpha.1')).toBe('show');
+    expect(whatsNewDecision('0.2.0-alpha.1', '0.2.0-alpha.2')).toBe('show');
+    expect(whatsNewDecision('0.2.0-alpha.9', '0.2.0-alpha.10')).toBe('show');
+    expect(whatsNewDecision('0.2.0-rc.1', '0.2.0')).toBe('show');
+    expect(whatsNewDecision('0.3.0', '0.2.0-alpha.1')).toBe('record'); // downgrade: no dialog
+    expect(whatsNewDecision('0.1.0', 'not-semver')).toBe('none');
+  });
+});

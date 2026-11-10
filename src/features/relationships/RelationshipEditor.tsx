@@ -22,6 +22,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface RelationshipEditorProps {
   relationship: Relationship;
@@ -166,7 +167,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <label className="block text-xs font-medium text-obsidian-muted">
                 Source Entity (Subject) *
               </label>
-              <select
+              <Select
                 value={draft.source_entity}
                 onChange={(e) => updateDraft({ source_entity: e.target.value })}
                 className="t-input !h-auto py-1.5 cursor-pointer"
@@ -179,7 +180,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                     {e.name} ({e.type})
                   </option>
                 ))}
-              </select>
+              </Select>
               {sourceEntity && (
                 <button
                   type="button"
@@ -234,7 +235,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
               <label className="block text-xs font-medium text-obsidian-muted">
                 Target Entity (Object) *
               </label>
-              <select
+              <Select
                 value={draft.target_entity}
                 onChange={(e) => updateDraft({ target_entity: e.target.value })}
                 className="t-input !h-auto py-1.5 cursor-pointer"
@@ -249,7 +250,7 @@ export const RelationshipEditor: React.FC<RelationshipEditorProps> = ({
                       {e.name} ({e.type})
                     </option>
                   ))}
-              </select>
+              </Select>
               {targetEntity && (
                 <button
                   type="button"

@@ -41,7 +41,7 @@ Run lookups against an entity from the inspector or its context menu and get new
 - **API console**: send GET/POST/PUT/PATCH/DELETE requests with custom headers and body. In the desktop app requests run in the main process, so CORS does not apply. Attach a response to an entity as a source, a note, or an attribute.
 
 ### Tools marketplace
-The **Tools** button in the left rail opens a small marketplace of well-known OSINT tools that TRACE can install and run for you: **Sherlock** and **Maigret** (username search across hundreds of sites) and **Holehe** (which services an email is registered on). Each tool is installed from PyPI into its own isolated Python environment inside TRACE's data folder (Python 3.9+ required) and can be removed again with one click. Pick an entity from the case, press **Run**, watch the live output, then **Review & add to case**: results go through the same review as file imports, linked to the entity you ran the tool on. See [docs/TOOLS.md](docs/TOOLS.md).
+The **Tools** button in the left rail opens a small marketplace of well-known OSINT tools that TRACE can install and run for you: **Sherlock** and **Maigret** (username search across hundreds of sites), **Holehe** and **Ignorant** (which services an email or phone number is registered on), **DNSRecon** (DNS records, name servers, mail hosts) and **dnstwist** (look-alike domains). Each tool is installed from PyPI into its own isolated Python environment inside TRACE's data folder (TRACE uses the system Python 3.9+, or downloads a checksum-verified portable Python if there is none) and can be removed again with one click. Pick an entity from the case, press **Run**, watch the live output, then **Review & add to case**: results go through the same review as file imports, linked to the entity you ran the tool on. See [docs/TOOLS.md](docs/TOOLS.md).
 
 ### Importing data from other tools
 TRACE organises what collection tools find; it does not replace them. **Import data** (Case brief toolbar or the explorer rail) reads SpiderFoot CSV exports, CSV files with type/value columns, plain indicator lists and the canonical TRACE import JSON. Before anything is written you review every entity: possible duplicates of existing entities are flagged and linked to the existing record instead of overwriting it. Imported records are tagged `imported`, keep the tool's original record and timestamps in their frontmatter, and cite an import source that also stores anything that could not be mapped. Imported relationships start as *Candidate*. See [docs/IMPORT.md](docs/IMPORT.md).
@@ -51,7 +51,7 @@ A local [Model Context Protocol](https://modelcontextprotocol.io) server ships i
 
 ### Workspace
 - **Explorer**: entities grouped by type and sortable by connections, plus links, sources, notes and tools, all filterable.
-- **Inspector**: properties, relationships, evidence, notes and transforms for the selected entity or relationship; case composition when nothing is selected.
+- **Inspector**: properties, relationships, evidence, notes and transforms for the selected entity or relationship; case composition when nothing is selected. It reopens by itself when you pick an object, and its Evidence and Notes sections have **+** buttons to cite a new or existing source on a relationship and to start a note about the entity.
 - **Case brief**: the `project.md` working document with case statistics and the most connected entities.
 - **Full-text search**: local SQLite FTS5 (WebAssembly) over names, aliases, attributes, tags, relationships and Markdown bodies.
 - **Tabs and panels**: preview and pinned tabs, resizable panels, command palette, status bar.
@@ -67,9 +67,10 @@ No accounts, no cloud sync, no telemetry. Each case is a folder of Markdown file
 ├── sources/*.md          # evidence and provenance
 ├── notes/*.md            # analyst notes (GitHub Flavored Markdown)
 └── graph-layout.json     # saved node positions
+~/Documents/trace/removed/ # cases removed from TRACE but kept on disk (never read by TRACE or MCP)
 ```
 
-The folder can be changed in Settings. Cases can be exported to and imported from a `.zip`. The web build stores data in the browser instead.
+The folder can be changed in Settings, which also shows how much space TRACE's data takes (investigations, installed tools, portable Python) and lets you remove investigations: on desktop you choose **Remove from TRACE** (files are kept in the workspace's `removed/` folder and can be re-imported) or **Remove from disk** (folder moved to the system Trash). Cases can be exported to a `.zip` and imported from a `.zip`, from a case folder, or by picking its `project.md`: **Import investigation…** in the investigation menu (on macOS one dialog accepts all three; on Windows, Linux and in the browser there are separate "(.zip)" and "folder" entries). `project.md` is the entry point, so a folder is recognised by having one. Imports always create a new case: if a case with the same id exists, the import is saved as "<name> (imported)" and nothing is overwritten; unrelated files in the folder are ignored. The web build stores data in the browser instead.
 
 ---
 
@@ -77,7 +78,7 @@ The folder can be changed in Settings. Cases can be exported to and imported fro
 
 Get the latest build from [**GitHub Releases**](https://github.com/dlxarl/Trace/releases): macOS (Apple Silicon and Intel), Windows x64 and Linux x64. The current version is `0.2.0-alpha.1`.
 
-**Settings → About & Updates → Check for Updates** compares your version with the newest release on GitHub (alpha pre-releases included) and shows its release notes with a link to the release page. Nothing is downloaded or installed automatically.
+**Settings → About & Updates → Check for Updates** compares your version with the newest release on GitHub (alpha pre-releases included) and shows its release notes with a link to the release page. Nothing is downloaded or installed automatically. **Settings → Changelog** shows the release notes of the installed version from its GitHub release (cached, so it also works offline), and after the app is updated to a newer version a **What's new** dialog shows those notes once. Builds without a published release (local or unreleased) simply show no changelog.
 
 Builds are not code-signed (macOS uses an ad-hoc signature), so your OS will warn on first launch. On macOS, right-click the app and choose Open.
 
@@ -113,7 +114,9 @@ Output goes to `release/`.
 | `npm run package:all` | All of the above |
 | `npm run package:dir` | Unpacked macOS `.app` for quick testing |
 
-Each Electron build gets a fresh SHA-256 build identifier, shown in Settings and on the loading screen. The web build has none.
+Intel artifacts are named `…-x86_64.*` (`build/renameArtifacts.cjs` renames electron-builder's `x64` after packaging), e.g. `Trace-0.2.0-alpha.1-mac-x86_64.dmg`. The MCP server is bundled automatically (`build:electron` also builds `dist-mcp/trace-mcp.mjs`).
+
+Every build gets a **Build ID** in the form `YYYYMMDDHHMMSS-<12-char git commit>` (UTC time of the build and the commit it was built from; `unknown` when git is unavailable). It is generated at compile time by `build/buildId.ts`, embedded as `__BUILD_ID__`, and shown in the desktop app on the loading screen and in Settings. It identifies a build; it is not a checksum of the binary. The web build does not display it.
 
 The version has a single source: `version` in `package.json`. The renderer reads it at build time (`__APP_VERSION__`), Electron reports it through `app.getVersion()`, electron-builder uses it for artifact names and bundle metadata, and the MCP server and update checker use the same value.
 
@@ -140,10 +143,10 @@ The version has a single source: `version` in `package.json`. The renderer reads
 ## Project structure
 
 ```
-electron/                  Main and preload processes (filesystem, HTTP, window, tool runner)
+electron/                  Main and preload processes (filesystem, HTTP, window, tool runner, portable Python, disk usage, case import)
 src/
 ├── components/
-│   ├── common/            Dialog, status badge, entity icons, Markdown editor
+│   ├── common/            Dialog, custom Select menu, code block, release notes, status badge, entity icons, Markdown editor
 │   ├── layout/            Tab bar, explorer, inspector, status bar
 │   └── modals/            Settings, import review, shortcuts, command palette, entity/relationship dialogs
 ├── features/
@@ -165,7 +168,7 @@ src/
 │   └── sqliteIndex.ts     SQLite FTS5 indexer
 ├── tests/                 Vitest suites
 └── types/                 Domain types and schemas
-build/                     App icons and packaging hooks
+build/                     App icons, packaging hooks, Build ID generator
 ```
 
 ---

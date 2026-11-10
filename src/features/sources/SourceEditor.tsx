@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Bookmark,
 } from 'lucide-react';
+import { Select } from '@/components/common/Select';
 
 interface SourceEditorProps {
   source: Source;
@@ -156,7 +157,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
               <label className="block text-[11px] text-zinc-500 mb-1">
                 Source Type *
               </label>
-              <select
+              <Select
                 value={draft.source_type}
                 onChange={(e) => updateDraft({ source_type: e.target.value as SourceType })}
                 className="t-input"
@@ -166,7 +167,7 @@ export const SourceEditor: React.FC<SourceEditorProps> = ({
                     {st.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
