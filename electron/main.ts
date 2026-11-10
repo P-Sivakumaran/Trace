@@ -1,14 +1,32 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { randomUUID } from 'node:crypto';
+import { dump } from 'js-yaml';
+import { ReconBroker } from './recon/broker';
+import { inside, caseDirectory } from './recon/paths';
+import { trustedDocument } from './recon/trusted-renderer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Explicit paths allow a portable workspace and an isolated desktop evaluation.
+const workspaceOverride = process.env.TRACE_WORKSPACE_PATH;
+const profileOverride = process.env.TRACE_USER_DATA_DIR;
+for (const value of [workspaceOverride, profileOverride]) {
+  if (value && !path.isAbsolute(value)) throw new Error('Trace override paths must be absolute');
+}
+if (profileOverride) {
+  fs.mkdirSync(profileOverride, { recursive: true });
+  app.setPath('userData', profileOverride);
+}
+
 let mainWindow: BrowserWindow | null = null;
 let configPath = '';
 let currentWorkspacePath = '';
+let recon: ReconBroker;
+const entryUrl = process.env.VITE_DEV_SERVER_URL || pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
 
 function loadConfig(): { workspacePath?: string } {
   try {
@@ -48,7 +66,7 @@ function sanitizeRelativePath(baseDir: string, targetPath: string): string {
   if (resolved !== baseResolved && !resolved.startsWith(baseResolved + path.sep)) {
     throw new Error('Access denied: path traversal detected');
   }
-  return resolved;
+  return inside(currentWorkspacePath, resolved);
 }
 
 function getProjectDir(projectId: string): string {
@@ -66,7 +84,7 @@ function getProjectDir(projectId: string): string {
   if (projDir !== projectsDir && !projDir.startsWith(projectsDir + path.sep)) {
     throw new Error('Access denied: path traversal detected');
   }
-  return projDir;
+  return inside(currentWorkspacePath, projDir);
 }
 
 function createWindow() {
@@ -114,6 +132,10 @@ function createWindow() {
     }
     return { action: 'deny' };
   });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!trustedDocument(url, entryUrl)) event.preventDefault();
+  });
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -125,25 +147,29 @@ function createWindow() {
 
 app.whenReady().then(() => {
   configPath = path.join(app.getPath('userData'), 'trace-config.json');
-  const defaultTracePath = path.join(app.getPath('documents'), 'trace');
+  const defaultTracePath = workspaceOverride || path.join(app.getPath('documents'), 'trace');
   const legacyTracePath = path.join(app.getPath('documents'), 'Trace-OSINT-Workspace');
 
   // Migrate legacy 'Trace-OSINT-Workspace' to 'trace' if needed
   try {
-    if (!fs.existsSync(defaultTracePath) && fs.existsSync(legacyTracePath)) {
+    if (!workspaceOverride && !fs.existsSync(defaultTracePath) && fs.existsSync(legacyTracePath)) {
       fs.renameSync(legacyTracePath, defaultTracePath);
     }
   } catch (err) {
     console.error('Failed to migrate legacy directory to trace:', err);
   }
 
-  const initialConfig = loadConfig();
+  const initialConfig = workspaceOverride ? {} : loadConfig();
   currentWorkspacePath =
     initialConfig.workspacePath && fs.existsSync(initialConfig.workspacePath)
       ? initialConfig.workspacePath
       : defaultTracePath;
 
   ensureDirSync(currentWorkspacePath);
+
+  recon = new ReconBroker({ workspace: () => currentWorkspacePath, profile: app.getPath('userData'),
+    localServer: path.join(app.getAppPath(), 'dist-mcp/mcp/kali-server.js'), nodeExecutable: process.execPath });
+  app.on('before-quit', () => recon.stop());
 
   // Set macOS dock icon in development (in packaged app Info.plist sets icon.icns)
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
@@ -175,14 +201,43 @@ app.on('window-all-closed', () => {
 });
 
 function setupIpcHandlers() {
+  // Every privileged handler shares one top-frame/document check, including legacy storage IPC.
+  const handle: typeof ipcMain.handle = (channel, listener) => ipcMain.handle(channel, (event, ...args) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || !trustedDocument(event.senderFrame.url, entryUrl)) {
+      throw new Error('IPC request is not from the trusted application document');
+    }
+    return listener(event, ...args);
+  });
+  handle('recon:getConfig', () => recon.config());
+  handle('recon:saveConfig', (_event, config) => recon.saveConfig(config));
+  handle('recon:health', () => recon.health());
+  handle('recon:readArtifact', (_event, caseId, id) => recon.readArtifact(caseId, id));
+  handle('recon:listJobs', (_event, caseId) => recon.list(caseId));
+  handle('recon:startJob', (_event, request) => recon.start(request));
+  handle('recon:cancelJob', (_event, caseId, id) => recon.cancel(caseId, id));
+  handle('recon:acceptJob', (_event, caseId, id, domains) => {
+    const job = recon.accept(caseId, id, domains);
+    mainWindow?.webContents.send('storage:changed', { type: 'reload', targetType: 'project', targetId: caseId });
+    return job;
+  });
+  handle('recon:listProposals', (_event, caseId) => recon.proposals(caseId));
+  handle('recon:stageProposal', (_event, caseId, id) => recon.stageProposal(caseId, id));
+  handle('recon:caseMcpConfig', (_event, caseId) => {
+    caseDirectory(currentWorkspacePath, caseId);
+    const config = recon.config(); if (!config) throw new Error('Configure the case domain scope first');
+    return { mcpServers: { 'trace-case': { command: process.execPath,
+      args: [path.join(app.getAppPath(), 'dist-mcp/mcp/trace-server.js'), '--workspace', currentWorkspacePath, '--case-id', caseId, '--scope-b64', Buffer.from(JSON.stringify(config.scope)).toString('base64')],
+      env: { ELECTRON_RUN_AS_NODE: '1' } } } };
+  });
   // Dialog: Select directory
-  ipcMain.handle('dialog:selectDirectory', async () => {
+  handle('dialog:selectDirectory', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory', 'createDirectory'],
       title: 'Select Trace Working Directory',
       defaultPath: currentWorkspacePath,
     });
     if (!result.canceled && result.filePaths.length > 0) {
+      recon.stop();
       currentWorkspacePath = result.filePaths[0];
       ensureDirSync(currentWorkspacePath);
       ensureDirSync(path.join(currentWorkspacePath, 'projects'));
@@ -217,7 +272,7 @@ function setupIpcHandlers() {
   });
 
   // Workspace: Get
-  ipcMain.handle('workspace:get', async () => {
+  handle('workspace:get', async () => {
     ensureDirSync(currentWorkspacePath);
     ensureDirSync(path.join(currentWorkspacePath, 'projects'));
     const wsFile = path.join(currentWorkspacePath, 'workspace.json');
@@ -244,14 +299,14 @@ function setupIpcHandlers() {
   });
 
   // Workspace: Save
-  ipcMain.handle('workspace:save', async (_, ws) => {
+  handle('workspace:save', async (_, ws) => {
     const wsFile = path.join(currentWorkspacePath, 'workspace.json');
     atomicWriteFileSync(wsFile, JSON.stringify(ws, null, 2));
   });
 
   // Projects: List
-  ipcMain.handle('projects:list', async () => {
-    const projectsDir = path.join(currentWorkspacePath, 'projects');
+  handle('projects:list', async () => {
+    const projectsDir = inside(currentWorkspacePath, path.join(currentWorkspacePath, 'projects'));
     ensureDirSync(projectsDir);
 
     const summaries: any[] = [];
@@ -259,11 +314,11 @@ function setupIpcHandlers() {
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        const projDir = path.join(projectsDir, entry.name);
-        const projFile = path.join(projDir, 'project.md');
+        const projDir = getProjectDir(entry.name);
+        const projFile = inside(projDir, path.join(projDir, 'project.md'));
         if (fs.existsSync(projFile)) {
           const entitiesDir = path.join(projDir, 'entities');
-          const relsDir = path.join(projDir, 'relationships');
+          const relsDir = inside(projDir, path.join(projDir, 'relationships'));
           const sourcesDir = path.join(projDir, 'sources');
           const notesDir = path.join(projDir, 'notes');
 
@@ -305,22 +360,22 @@ function setupIpcHandlers() {
   });
 
   // Projects: Get
-  ipcMain.handle('projects:get', async (_, id: string) => {
+  handle('projects:get', async (_, id: string) => {
     const projDir = getProjectDir(id);
-    const projFile = path.join(projDir, 'project.md');
+    const projFile = inside(projDir, path.join(projDir, 'project.md'));
     if (!fs.existsSync(projFile)) return null;
 
     const projectRaw = fs.readFileSync(projFile, 'utf-8');
 
     const readDirFiles = (subdir: string) => {
-      const fullPath = path.join(projDir, subdir);
+      const fullPath = inside(projDir, path.join(projDir, subdir));
       if (!fs.existsSync(fullPath)) return [];
       return fs
         .readdirSync(fullPath)
         .filter((f) => f.endsWith('.md'))
         .map((f) => ({
           id: f.replace('.md', ''),
-          raw: fs.readFileSync(path.join(fullPath, f), 'utf-8'),
+          raw: fs.readFileSync(inside(projDir, path.join(fullPath, f)), 'utf-8'),
         }));
     };
 
@@ -334,31 +389,36 @@ function setupIpcHandlers() {
   });
 
   // Projects: Create
-  ipcMain.handle('projects:create', async (_, { name, description, id }) => {
-    const slug = id || (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `proj-${Date.now()}`);
+  handle('projects:create', async (_, { name, description, id }) => {
+    if (typeof name !== 'string' || !name.trim()) throw new Error('A case name is required');
+    let slug = id || (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `proj-${randomUUID()}`);
+    if (!id && fs.existsSync(getProjectDir(slug))) slug = `${slug}-${randomUUID()}`;
     const projDir = getProjectDir(slug);
-    ensureDirSync(projDir);
+    ensureDirSync(path.dirname(projDir));
+    // Exclusive reservation prevents duplicate names/IDs from overwriting an existing case.
+    fs.mkdirSync(projDir);
     ensureDirSync(path.join(projDir, 'entities'));
     ensureDirSync(path.join(projDir, 'relationships'));
     ensureDirSync(path.join(projDir, 'sources'));
     ensureDirSync(path.join(projDir, 'notes'));
 
-    const projFile = path.join(projDir, 'project.md');
+    const projFile = inside(projDir, path.join(projDir, 'project.md'));
     const now = new Date().toISOString();
     const proj = {
       id: slug,
+      type: 'project',
       name,
       description: description || '',
       created_at: now,
       updated_at: now,
     };
-    const content = `---\nid: "${slug}"\nname: "${name}"\ndescription: "${description || ''}"\ncreated_at: "${now}"\nupdated_at: "${now}"\n---\n\n# ${name}\n\n${description || ''}\n`;
+    const content = `---\n${dump(proj, { noRefs: true })}---\n\n# ${name}\n\n${description || ''}\n`;
     atomicWriteFileSync(projFile, content);
     return proj;
   });
 
   // Projects: Save
-  ipcMain.handle('projects:save', async (_, raw: string) => {
+  handle('projects:save', async (_, raw: string) => {
     const idMatch = raw.match(/^id:\s*["']?([^"'\n\r]+)["']?/m);
     if (!idMatch) return;
     const projectId = idMatch[1].trim();
@@ -369,7 +429,7 @@ function setupIpcHandlers() {
   });
 
   // Projects: Delete
-  ipcMain.handle('projects:delete', async (_, id: string) => {
+  handle('projects:delete', async (_, id: string) => {
     const projDir = getProjectDir(id);
     if (fs.existsSync(projDir)) {
       fs.rmSync(projDir, { recursive: true, force: true });
@@ -377,7 +437,7 @@ function setupIpcHandlers() {
   });
 
   // Entities: Save
-  ipcMain.handle('entities:save', async (_, { projectId, entityId, raw }) => {
+  handle('entities:save', async (_, { projectId, entityId, raw }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'entities'),
       `${entityId}.md`
@@ -386,7 +446,7 @@ function setupIpcHandlers() {
   });
 
   // Entities: Delete
-  ipcMain.handle('entities:delete', async (_, { projectId, entityId }) => {
+  handle('entities:delete', async (_, { projectId, entityId }) => {
     const projDir = getProjectDir(projectId);
     const filePath = sanitizeRelativePath(
       path.join(projDir, 'entities'),
@@ -397,13 +457,13 @@ function setupIpcHandlers() {
     }
 
     // Cascade delete connected relationships on disk to prevent dangling references
-    const relsDir = path.join(projDir, 'relationships');
+    const relsDir = inside(projDir, path.join(projDir, 'relationships'));
     const removedRelIds: string[] = [];
     if (fs.existsSync(relsDir)) {
       const files = fs.readdirSync(relsDir).filter((f) => f.endsWith('.md'));
       for (const f of files) {
         try {
-          const relPath = path.join(relsDir, f);
+          const relPath = inside(projDir, path.join(relsDir, f));
           const raw = fs.readFileSync(relPath, 'utf-8');
           if (
             raw.includes(`source_entity: "${entityId}"`) ||
@@ -423,7 +483,7 @@ function setupIpcHandlers() {
   });
 
   // Relationships: Save
-  ipcMain.handle('relationships:save', async (_, { projectId, relId, raw }) => {
+  handle('relationships:save', async (_, { projectId, relId, raw }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'relationships'),
       `${relId}.md`
@@ -432,7 +492,7 @@ function setupIpcHandlers() {
   });
 
   // Relationships: Delete
-  ipcMain.handle('relationships:delete', async (_, { projectId, relId }) => {
+  handle('relationships:delete', async (_, { projectId, relId }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'relationships'),
       `${relId}.md`
@@ -443,7 +503,7 @@ function setupIpcHandlers() {
   });
 
   // Sources: Save
-  ipcMain.handle('sources:save', async (_, { projectId, sourceId, raw }) => {
+  handle('sources:save', async (_, { projectId, sourceId, raw }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'sources'),
       `${sourceId}.md`
@@ -452,7 +512,7 @@ function setupIpcHandlers() {
   });
 
   // Sources: Delete
-  ipcMain.handle('sources:delete', async (_, { projectId, sourceId }) => {
+  handle('sources:delete', async (_, { projectId, sourceId }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'sources'),
       `${sourceId}.md`
@@ -463,7 +523,7 @@ function setupIpcHandlers() {
   });
 
   // Notes: Save
-  ipcMain.handle('notes:save', async (_, { projectId, noteId, raw }) => {
+  handle('notes:save', async (_, { projectId, noteId, raw }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'notes'),
       `${noteId}.md`
@@ -472,7 +532,7 @@ function setupIpcHandlers() {
   });
 
   // Notes: Delete
-  ipcMain.handle('notes:delete', async (_, { projectId, noteId }) => {
+  handle('notes:delete', async (_, { projectId, noteId }) => {
     const filePath = sanitizeRelativePath(
       path.join(getProjectDir(projectId), 'notes'),
       `${noteId}.md`
@@ -483,7 +543,7 @@ function setupIpcHandlers() {
   });
 
   // Graph Layout: Get & Save
-  ipcMain.handle('graph:getLayout', async (_, projectId: string) => {
+  handle('graph:getLayout', async (_, projectId: string) => {
     const filePath = sanitizeRelativePath(
       getProjectDir(projectId),
       'graph-layout.json'
@@ -496,7 +556,7 @@ function setupIpcHandlers() {
     return { positions: {} };
   });
 
-  ipcMain.handle('graph:saveLayout', async (_, { projectId, layout }) => {
+  handle('graph:saveLayout', async (_, { projectId, layout }) => {
     const filePath = sanitizeRelativePath(
       getProjectDir(projectId),
       'graph-layout.json'
@@ -505,7 +565,7 @@ function setupIpcHandlers() {
   });
 
   // Open Project / Workspace in Finder / File Explorer
-  ipcMain.handle('workspace:openInExplorer', async (_, projectId?: string) => {
+  handle('workspace:openInExplorer', async (_, projectId?: string) => {
     let targetPath = currentWorkspacePath;
     if (projectId) {
       const projDir = getProjectDir(projectId);
@@ -519,12 +579,12 @@ function setupIpcHandlers() {
   });
 
   // Window State & Platform
-  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() || false);
-  ipcMain.handle('app:getPlatform', () => process.platform);
-  ipcMain.handle('app:getVersion', () => app.getVersion());
+  handle('window:isFullScreen', () => mainWindow?.isFullScreen() || false);
+  handle('app:getPlatform', () => process.platform);
+  handle('app:getVersion', () => app.getVersion());
 
   // Network Request (Proxy to bypass CORS for API Quick Sources)
-  ipcMain.handle('net:request', async (_, req: {
+  handle('net:request', async (_, req: {
     url: string;
     method?: string;
     headers?: Record<string, string>;

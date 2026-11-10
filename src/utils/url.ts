@@ -4,21 +4,15 @@
  */
 export function isSafeUrl(url?: string | null): boolean {
   if (!url || typeof url !== 'string') return false;
-  const trimmed = url.trim().toLowerCase();
-  if (
-    trimmed.startsWith('javascript:') ||
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('vbscript:') ||
-    trimmed.startsWith('file:')
-  ) {
+  const trimmed = url.trim();
+  if (!trimmed || Array.from(trimmed).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return false;
+  if (trimmed.startsWith('#')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:';
+  } catch {
     return false;
   }
-  return (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('mailto:') ||
-    trimmed.startsWith('#')
-  );
 }
 
 /**

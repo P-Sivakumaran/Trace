@@ -7,6 +7,7 @@
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
+    "dist-mcp/**/*",
     "package.json"
   ],
   "afterPack": "./build/afterPack.cjs",

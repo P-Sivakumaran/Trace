@@ -1,0 +1,120 @@
+.recon-dialog {
+  --recon-line: #74777f;
+  --recon-muted: #a5a8af;
+  --recon-accent: #77c1ba;
+  margin: auto;
+  width: min(980px, calc(100vw - 24px));
+  max-width: none;
+  height: min(820px, calc(100dvh - 24px));
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--recon-line);
+  border-radius: 8px;
+  color: var(--t-text);
+  background: var(--t-bg);
+  font-size: .875rem;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.recon-dialog[open] { display: flex; flex-direction: column; }
+.recon-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+.recon-dialog *, .recon-dialog *::before, .recon-dialog *::after { box-sizing: border-box; }
+.recon-dialog h2 { font-size: 1.25rem; font-weight: 600; color: var(--t-text-strong); }
+.recon-dialog h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; color: var(--t-text-strong); }
+.recon-dialog h4 { font-weight: 600; }
+.recon-dialog p { margin: 8px 0; overflow-wrap: anywhere; }
+.recon-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px 0; flex: none; }
+.recon-header > div { min-width: 0; }
+.recon-case { margin: 2px 0 0 !important; }
+.recon-intro { padding: 0 20px; flex: none; background: var(--t-bg); }
+.recon-nav { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 20px 12px; border-bottom: 1px solid var(--t-border); flex: none; }
+.recon-nav button { border-color: transparent !important; }
+.recon-nav button[aria-pressed="true"] { color: var(--recon-accent); border-color: var(--recon-accent) !important; background: var(--t-accent-bg); }
+.recon-body { min-height: 0; overflow: auto; padding: 20px; overscroll-behavior: contain; flex: 1; }
+.recon-dialog button, .recon-dialog select, .recon-dialog input:not([type="checkbox"]), .recon-dialog textarea {
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--recon-line);
+  border-radius: 4px;
+  color: inherit;
+  background: var(--t-raised);
+  font: inherit;
+  max-width: 100%;
+}
+.recon-dialog button { cursor: pointer; white-space: normal; }
+.recon-dialog button:hover:not(:disabled) { background: #303238; }
+.recon-dialog button:active:not(:disabled) { background: #3b3e45; }
+.recon-dialog :disabled { cursor: not-allowed; color: #a5a8af; background: #202125; border-color: #60636a; }
+.recon-dialog :is(button, input, textarea, select, summary, pre, a):focus-visible { outline: 3px solid var(--recon-accent); outline-offset: 3px; }
+.recon-dialog .recon-primary { color: #101b1b; background: var(--recon-accent); border-color: var(--recon-accent); font-weight: 600; }
+.recon-dialog .recon-primary:hover:not(:disabled) { background: #93d3cd; }
+.recon-dialog .recon-primary:active:not(:disabled) { background: #66afa9; }
+.recon-dialog .recon-primary:disabled { color: #a5a8af; background: #202125; border-color: #60636a; }
+.recon-dialog label { display: grid; gap: 6px; margin: 12px 0; min-width: 0; }
+.recon-dialog input:not([type="checkbox"]), .recon-dialog textarea, .recon-dialog select { width: 100%; min-width: 0; }
+.recon-dialog textarea { resize: vertical; }
+.recon-dialog input::placeholder, .recon-dialog textarea::placeholder { color: var(--recon-muted); opacity: 1; }
+.recon-dialog fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.recon-dialog legend { font-weight: 600; padding-top: 16px; }
+.recon-dialog form fieldset > button { margin-top: 16px; }
+.recon-muted { color: var(--recon-muted); }
+.recon-domain { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.recon-warning { color: #e3c382; }
+.recon-error { color: #f1aaaa; }
+.recon-dialog a { color: var(--recon-accent); text-decoration: underline; text-underline-offset: 3px; }
+.recon-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.recon-connection { max-width: 680px; }
+.recon-notice { background: var(--t-raised); padding: 16px; margin: 16px 0; border: 1px solid var(--recon-line); border-radius: 4px; }
+.recon-scope { background: var(--t-panel); border: 1px solid var(--t-border); padding: 16px; border-radius: 4px; min-width: 0; }
+.recon-scope ul { padding-left: 18px; list-style: disc; }
+.recon-collect-layout { display: grid; gap: 24px; }
+.recon-ledger { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--t-border); }
+.recon-section-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.recon-empty { padding: 16px 0; }
+.recon-job { border-top: 1px solid var(--recon-line); }
+.recon-job:last-child { border-bottom: 1px solid var(--recon-line); }
+.recon-job > summary { padding: 12px 0; min-height: 52px; cursor: pointer; overflow-wrap: anywhere; }
+.recon-job > summary > span { margin-right: 14px; }
+.recon-job > summary:hover, .recon-evidence > summary:hover { background: var(--t-hover); }
+.recon-job-status { font-weight: 600; }
+.status-succeeded, .status-running { color: var(--recon-accent); }
+.status-failed { color: #f1aaaa; }
+.recon-job-body { padding: 0 4px 20px; }
+.recon-evidence { margin: 12px 0; }
+.recon-evidence > summary { min-height: 44px; padding: 10px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.recon-evidence dl { display: grid; gap: 4px 16px; margin: 12px 0; }
+.recon-evidence dt { color: var(--recon-muted); }
+.recon-evidence dd { margin: 0 0 8px; overflow-wrap: anywhere; min-width: 0; }
+.recon-dialog pre { max-height: 240px; overflow: auto; padding: 12px; border: 1px solid var(--recon-line); margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: var(--font-mono); font-size: .8125rem; background: var(--t-panel); }
+.recon-selection-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.recon-selection-tools > span { margin-right: auto; }
+.recon-domains { max-height: 264px; overflow: auto; border-block: 1px solid var(--t-border); margin-bottom: 16px; }
+.recon-domains label { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 0; padding: 8px 4px; cursor: pointer; }
+.recon-domains label:hover { background: var(--t-hover); }
+.recon-dialog input[type="checkbox"] { width: 20px; height: 20px; flex: none; accent-color: var(--recon-accent); cursor: pointer; }
+.recon-proposal { padding: 20px 0; border-top: 1px solid var(--recon-line); }
+.recon-proposal-summary { white-space: pre-wrap; }
+.recon-footer { flex: none; padding: 10px 20px; border-top: 1px solid var(--t-border); background: var(--t-panel); max-height: 28%; overflow: auto; }
+.recon-footer p { margin: 0; min-height: 1.5em; }
+@media (min-width: 560px) {
+  .recon-ssh-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .recon-span { grid-column: 1 / -1; }
+  .recon-evidence dl { grid-template-columns: 100px minmax(0, 1fr); }
+}
+@media (min-width: 780px) {
+  .recon-collect-layout { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+  .recon-body { padding: 24px; }
+}
+@media (max-width: 420px) {
+  .recon-header { padding: 12px 12px 0; }
+  .recon-intro { padding: 0 12px; }
+  .recon-nav { padding: 4px 12px 8px; }
+  .recon-nav button { padding-inline: 8px; }
+  .recon-body { padding: 12px; }
+  .recon-footer { padding: 10px 12px; }
+}
+@media (forced-colors: active) {
+  .recon-dialog { border-color: CanvasText; }
+  .recon-dialog button, .recon-dialog input, .recon-dialog textarea, .recon-dialog select { border-color: ButtonText; }
+  .recon-nav button[aria-pressed="true"] { outline: 2px solid Highlight; }
+}

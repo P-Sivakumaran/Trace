@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { availableImportId, readProjectArchive } from './projectArchive';
 import {
   Entity,
   GraphLayout,
@@ -26,11 +27,13 @@ import {
   serializeSourceFile,
 } from '../markdownParser';
 import { sqliteIndexService } from '../sqliteIndex';
+import type { ReconApi } from '../recon/contracts';
 
 declare global {
   interface Window {
     electronAPI?: {
       isDesktop: boolean;
+      recon?: ReconApi;
       getWorkspace: () => Promise<Workspace>;
       saveWorkspace: (ws: Workspace) => Promise<void>;
       listProjects: () => Promise<ProjectSummary[]>;
@@ -149,10 +152,10 @@ export class ElectronStorageAdapter implements IStorageService {
 
   async deleteEntity(projectId: string, entityId: string): Promise<void> {
     const res = await this.api.deleteEntity(projectId, entityId);
-    sqliteIndexService.removeDoc(entityId);
+    sqliteIndexService.removeDoc(projectId, entityId, 'entity');
     if (res?.removedRelIds && Array.isArray(res.removedRelIds)) {
       for (const relId of res.removedRelIds) {
-        sqliteIndexService.removeDoc(relId);
+        sqliteIndexService.removeDoc(projectId, relId, 'relationship');
       }
     }
   }
@@ -165,7 +168,7 @@ export class ElectronStorageAdapter implements IStorageService {
 
   async deleteRelationship(projectId: string, relId: string): Promise<void> {
     await this.api.deleteRelationship(projectId, relId);
-    sqliteIndexService.removeDoc(relId);
+    sqliteIndexService.removeDoc(projectId, relId, 'relationship');
   }
 
   async saveSource(projectId: string, source: Source): Promise<void> {
@@ -176,7 +179,7 @@ export class ElectronStorageAdapter implements IStorageService {
 
   async deleteSource(projectId: string, sourceId: string): Promise<void> {
     await this.api.deleteSource(projectId, sourceId);
-    sqliteIndexService.removeDoc(sourceId);
+    sqliteIndexService.removeDoc(projectId, sourceId, 'source');
   }
 
   async saveNote(projectId: string, note: Note): Promise<void> {
@@ -187,7 +190,7 @@ export class ElectronStorageAdapter implements IStorageService {
 
   async deleteNote(projectId: string, noteId: string): Promise<void> {
     await this.api.deleteNote(projectId, noteId);
-    sqliteIndexService.removeDoc(noteId);
+    sqliteIndexService.removeDoc(projectId, noteId, 'note');
   }
 
   async getGraphLayout(projectId: string): Promise<GraphLayout> {
@@ -242,78 +245,20 @@ export class ElectronStorageAdapter implements IStorageService {
   }
 
   async importProjectZip(file: File | ArrayBuffer): Promise<string> {
-    const zip = new JSZip();
-    const data = file instanceof File ? await file.arrayBuffer() : file;
-    await zip.loadAsync(data);
-
-    let projectFile: JSZip.JSZipObject | null = null;
-    let basePrefix = '';
-
-    zip.forEach((relativePath, entry) => {
-      if (entry.name.endsWith('project.md') && !projectFile) {
-        projectFile = entry;
-        basePrefix = relativePath.slice(0, -'project.md'.length);
-      }
-    });
-
-    if (!projectFile) {
-      throw new Error('Invalid project zip: project.md not found');
-    }
-
-    const projectText = await (projectFile as JSZip.JSZipObject).async('string');
-    const parsedProject = parseProjectFile(projectText, `imported-${Date.now()}`);
-
-    await this.createProject(parsedProject.name, (parsedProject as any).description || '', parsedProject.id);
-    await this.saveProject(parsedProject);
-
-    // Entities
-    const entEntries = zip.file(new RegExp(`^${basePrefix}entities/.*\\.md$`));
-    for (const entry of entEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'ent';
-      const ent = parseEntityFile(raw, filename);
-      await this.saveEntity(parsedProject.id, ent);
-    }
-
-    // Relationships
-    const relEntries = zip.file(new RegExp(`^${basePrefix}relationships/.*\\.md$`));
-    for (const entry of relEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'rel';
-      const rel = parseRelationshipFile(raw, filename);
-      await this.saveRelationship(parsedProject.id, rel);
-    }
-
-    // Sources
-    const srcEntries = zip.file(new RegExp(`^${basePrefix}sources/.*\\.md$`));
-    for (const entry of srcEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'src';
-      const src = parseSourceFile(raw, filename);
-      await this.saveSource(parsedProject.id, src);
-    }
-
-    // Notes
-    const noteEntries = zip.file(new RegExp(`^${basePrefix}notes/.*\\.md$`));
-    for (const entry of noteEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'note';
-      const note = parseNoteFile(raw, filename);
-      await this.saveNote(parsedProject.id, note);
-    }
-
-    // Layout
-    const layoutEntry = zip.file(`${basePrefix}graph-layout.json`);
-    if (layoutEntry) {
-      try {
-        const layoutRaw = await layoutEntry.async('string');
-        const layout = JSON.parse(layoutRaw);
-        await this.saveGraphLayout(parsedProject.id, layout);
-      } catch {}
-    }
-
-    await this.rebuildIndex(parsedProject.id);
-    return parsedProject.id;
+    const { data, layout } = await readProjectArchive(file);
+    data.project.id = availableImportId(data.project.id, (await this.listProjects()).map((project) => project.id));
+    const id = data.project.id;
+    await this.createProject(data.project.name, '', id);
+    await this.saveProject(data.project);
+    for (const entity of data.entities) await this.saveEntity(id, entity);
+    for (const relationship of data.relationships) await this.saveRelationship(id, relationship);
+    for (const source of data.sources) await this.saveSource(id, source);
+    for (const note of data.notes) await this.saveNote(id, note);
+    await this.saveGraphLayout(id, layout);
+    await this.rebuildIndex(id);
+    const workspace = await this.getWorkspace();
+    await this.saveWorkspace({ ...workspace, activeProjectId: id });
+    return id;
   }
 
   async openInExplorer(projectId?: string): Promise<boolean> {

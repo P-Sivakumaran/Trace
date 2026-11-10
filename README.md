@@ -87,6 +87,36 @@ npm install
 
 ## Packaging
 
+### Reproducible checks and case imports
+
+Use Node.js 22.12 or newer and `npm ci` for the locked dependency set. `npm test`
+runs the installed Vitest version; it does not download a runner at execution time.
+CI runs tests, lint and the web build. Desktop packaging still needs Electron's
+platform runtime and the appropriate operating system/toolchain.
+
+Importing an archive with an existing case ID creates a separate case instead of
+overwriting the original. Entity/evidence IDs and graph positions are preserved
+inside the imported case, and search is scoped by case and record type. Archives
+must have one `project.md`, valid frontmatter and valid record IDs/positions.
+Text imports are limited to 5 million characters per file, 50 million in total
+and 10,000 files. Keep exported archives as backups of browser-local cases.
+
+For an isolated or portable desktop workspace, set absolute paths before starting:
+
+```sh
+npm run build:electron
+TRACE_WORKSPACE_PATH=/absolute/path/to/cases \
+TRACE_USER_DATA_DIR=/absolute/path/to/profile \
+./node_modules/.bin/electron .
+```
+
+The workspace override takes precedence over saved workspace settings and skips
+automatic migration of the legacy Documents workspace. The profile override
+keeps settings separate. Omit both variables to use the existing default behavior.
+
+See [the reliability review](docs/local-reliability-review.md) for verified scope
+and remaining work.
+
 Output goes to `release/`.
 
 | Command | Produces |
@@ -149,9 +179,28 @@ build/                     App icons and packaging hooks
 ## Security and privacy
 
 - Data stays on your filesystem as readable Markdown.
-- No telemetry, analytics or cloud services. The app only makes network requests you trigger (transforms and the API console).
+- No telemetry or analytics. Network requests are triggered by you through transforms, the API console or passive recon; connected MCP clients receive the case data you expose to them.
 - Works fully offline for everything else.
 
 ## License
 
 [MIT](LICENSE)
+
+## Passive recon and MCP
+
+The desktop **Recon & MCP** panel connects to a local passive certificate-index
+runner or a Kali runner over verified SSH. Review raw evidence and select domain
+leads before importing sourced candidate relationships. A separate MCP server
+lets an assistant read one selected case and submit unverified proposals for
+operator review. It exposes no shell or collection tools to the assistant.
+
+See [setup, evidence handling and MCP configuration](docs/kali-mcp-setup.md) and
+[the development plan](docs/kali-mcp-development-plan.md). Build the runner with
+`npm run build:mcp` before `npm run dev:electron`; `npm run build:electron`
+includes that step. Kali deployment requires an actual SSH endpoint.
+
+The [UX refinement plan](docs/ux-refinement-plan.md) records the applied anti-slop
+review and verification. The desktop flow separates collection, connection and
+assistant access; save and check the connection before collecting. A repeatable
+`npm run check:ux` walkthrough covers review/import, failure recovery, keyboard,
+contrast scans and reflow; its optional test-tool setup is in that plan.

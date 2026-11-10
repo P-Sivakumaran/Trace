@@ -3,6 +3,19 @@ import { contextBridge, ipcRenderer } from 'electron';
 // Expose safe, isolated API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   isDesktop: true,
+  recon: {
+    getConfig: () => ipcRenderer.invoke('recon:getConfig'),
+    saveConfig: (config: unknown) => ipcRenderer.invoke('recon:saveConfig', config),
+    health: () => ipcRenderer.invoke('recon:health'),
+    readArtifact: (caseId: string, id: string) => ipcRenderer.invoke('recon:readArtifact', caseId, id),
+    listJobs: (caseId: string) => ipcRenderer.invoke('recon:listJobs', caseId),
+    startJob: (request: unknown) => ipcRenderer.invoke('recon:startJob', request),
+    cancelJob: (caseId: string, id: string) => ipcRenderer.invoke('recon:cancelJob', caseId, id),
+    acceptJob: (caseId: string, id: string, domains: string[]) => ipcRenderer.invoke('recon:acceptJob', caseId, id, domains),
+    listProposals: (caseId: string) => ipcRenderer.invoke('recon:listProposals', caseId),
+    stageProposal: (caseId: string, id: string) => ipcRenderer.invoke('recon:stageProposal', caseId, id),
+    caseMcpConfig: (caseId: string) => ipcRenderer.invoke('recon:caseMcpConfig', caseId),
+  },
 
   // Workspace & Project operations
   getWorkspace: () => ipcRenderer.invoke('workspace:get'),

@@ -1,3 +1,4 @@
+import { ReconPanel } from '@/components/ReconPanel';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Entity,
@@ -801,7 +802,7 @@ export function App() {
       const currentId = activeProjectIdRef.current;
       if (currentId) {
         storage.getProject(currentId).then((data) => {
-          if (data) setProjectData(data);
+          if (data && activeProjectIdRef.current === currentId) setProjectData(data);
         });
       }
       storage.listProjects().then(setProjects);
@@ -1248,6 +1249,7 @@ export function App() {
     }
   };
 
+  const [reconOpen, setReconOpen] = useState(false);
   const currentProject = projects.find((p) => p.id === activeProjectId);
   const activeTab: Tab | undefined = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -1526,6 +1528,7 @@ export function App() {
 
         {/* Center Main Workspace */}
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--t-bg)] min-w-[420px]">
+          {activeProjectId && <button className="min-h-11 border-b px-4 text-left shrink-0" onClick={() => setReconOpen(true)}>Recon &amp; MCP</button>}
           {/* Tab Content Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {isLoading && (
@@ -1894,6 +1897,8 @@ export function App() {
         isOpen={shortcutsModalOpen}
         onClose={() => setShortcutsModalOpen(false)}
       />
+
+      {reconOpen && activeProjectId && <ReconPanel key={activeProjectId} caseId={activeProjectId} caseName={currentProject?.name} onClose={() => setReconOpen(false)} onImported={async () => { const updated = await storage.getProject(activeProjectId); setProjectData(previous => previous?.project.id === activeProjectId ? updated : previous); }} />}
 
       <SettingsModal
         isOpen={settingsModalOpen}

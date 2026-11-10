@@ -26,4 +26,11 @@ describe('URL Security & Utilities', () => {
     expect(safeUrlPathname('invalid-url-string')).toBe('invalid-url-string');
     expect(safeUrlPathname('')).toBe('');
   });
+
+  it('rejects malformed addresses and embedded control characters', () => {
+    for (const value of ['http://', 'https://[invalid', 'https://exa mple.com', 'https://example.com/\nfile', 'java\tscript:alert(1)']) {
+      expect(isSafeUrl(value), value).toBe(false);
+    }
+    expect(isSafeUrl(' HTTPS://example.com ')).toBe(true);
+  });
 });

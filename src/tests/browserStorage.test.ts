@@ -24,6 +24,13 @@ describe('BrowserStorageAdapter', () => {
     expect(ws.activeProjectId).toBe(proj.id);
   });
 
+  it('refuses an existing explicit case ID without replacing its contents', async () => {
+    const adapter = new BrowserStorageAdapter();
+    await adapter.createProject('Original case', '', 'same-id');
+    await expect(adapter.createProject('Replacement case', '', 'same-id')).rejects.toThrow('already exists');
+    expect((await adapter.getProject('same-id'))?.project.name).toBe('Original case');
+  });
+
   it('cascade deletes connected relationships when an entity is deleted', async () => {
     const adapter = new BrowserStorageAdapter();
     const proj = await adapter.createProject('Cascade Project');

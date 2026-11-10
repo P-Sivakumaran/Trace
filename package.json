@@ -8,17 +8,23 @@
     "dev": "vite",
     "dev:electron": "ELECTRON=true vite",
     "build": "tsc -b && vite build",
-    "build:electron": "tsc -b && ELECTRON=true vite build",
+    "build:electron": "npm run build:mcp && tsc -b && ELECTRON=true vite build",
     "package:mac": "npm run build:electron && electron-builder --mac --arm64 --x64",
     "package:win": "npm run build:electron && electron-builder --win --x64",
     "package:linux": "npm run build:electron && electron-builder --linux --x64",
     "package:all": "npm run build:electron && electron-builder --mac --arm64 --x64 && electron-builder --win --x64 && electron-builder --linux --x64",
     "package:dir": "npm run build:electron && electron-builder --mac --dir",
     "lint": "oxlint",
-    "test": "npx vitest run",
-    "preview": "vite preview"
+    "test": "npm run build:mcp && vitest run",
+    "preview": "vite preview",
+    "build:mcp": "tsc -p tsconfig.mcp.json",
+    "mcp:kali": "node dist-mcp/mcp/kali-server.js",
+    "mcp:case": "node dist-mcp/mcp/trace-server.js",
+    "check:ux": "node scripts/check-recon-ux.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "clsx": "^2.1.1",
     "cytoscape": "^3.34.4",
     "file-saver": "^2.0.5",
@@ -31,6 +37,7 @@
     "remark-gfm": "^4.0.1",
     "sql.js": "^1.15.0",
     "tailwind-merge": "^3.7.0",
+    "tldts": "7.4.19",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -52,6 +59,7 @@
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vite-plugin-electron": "^1.1.2",
-    "vite-plugin-electron-renderer": "^1.0.0"
+    "vite-plugin-electron-renderer": "^1.0.0",
+    "vitest": "3.2.7"
   }
 }

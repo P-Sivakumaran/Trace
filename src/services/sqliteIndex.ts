@@ -20,7 +20,7 @@ interface SearchDoc {
   tags_str: string;
 }
 
-class SqliteIndexService {
+export class SqliteIndexService {
   private SQL: SqlJsStatic | null = null;
   private db: Database | null = null;
   private fallbackDocs: Map<string, SearchDoc> = new Map();
@@ -41,7 +41,7 @@ class SqliteIndexService {
               if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
                 return `./${file}`;
               }
-              if (typeof window === 'undefined') {
+              if (typeof window === 'undefined' || !window.location) {
                 try {
                   // In Node.js / test environment
                   return `./node_modules/sql.js/dist/${file}`;
@@ -71,20 +71,26 @@ class SqliteIndexService {
     if (!this.db) return;
 
     try {
+      // This database is a disposable index of canonical case files, not case storage.
+      const version = this.db.exec('PRAGMA user_version')[0]?.values[0]?.[0];
+      if (version !== 1) {
+        this.db.run('DROP TABLE IF EXISTS entities; DROP TABLE IF EXISTS relationships; DROP TABLE IF EXISTS sources; DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS search_documents;');
+      }
       this.db.run(`
         CREATE TABLE IF NOT EXISTS entities (
-          id TEXT PRIMARY KEY,
+          id TEXT,
           project_id TEXT,
           type TEXT,
           name TEXT,
           aliases_json TEXT,
           attributes_json TEXT,
           tags_json TEXT,
-          updated_at TEXT
+          updated_at TEXT,
+          PRIMARY KEY (project_id, id)
         );
 
         CREATE TABLE IF NOT EXISTS relationships (
-          id TEXT PRIMARY KEY,
+          id TEXT,
           project_id TEXT,
           type TEXT,
           source_entity TEXT,
@@ -93,39 +99,44 @@ class SqliteIndexService {
           status TEXT,
           confidence REAL,
           evidence_json TEXT,
-          created_at TEXT
+          created_at TEXT,
+          PRIMARY KEY (project_id, id)
         );
 
         CREATE TABLE IF NOT EXISTS sources (
-          id TEXT PRIMARY KEY,
+          id TEXT,
           project_id TEXT,
           title TEXT,
           url TEXT,
           source_type TEXT,
-          accessed_at TEXT
+          accessed_at TEXT,
+          PRIMARY KEY (project_id, id)
         );
 
         CREATE TABLE IF NOT EXISTS notes (
-          id TEXT PRIMARY KEY,
+          id TEXT,
           project_id TEXT,
           title TEXT,
           tags_json TEXT,
-          updated_at TEXT
+          updated_at TEXT,
+          PRIMARY KEY (project_id, id)
         );
 
         CREATE TABLE IF NOT EXISTS search_documents (
-          doc_id TEXT PRIMARY KEY,
+          doc_id TEXT,
           project_id TEXT,
           doc_type TEXT,
           title TEXT,
           subtitle TEXT,
           content TEXT,
-          tags_str TEXT
+          tags_str TEXT,
+          PRIMARY KEY (project_id, doc_type, doc_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_entities_project ON entities(project_id);
         CREATE INDEX IF NOT EXISTS idx_relationships_project ON relationships(project_id);
         CREATE INDEX IF NOT EXISTS idx_search_project ON search_documents(project_id);
+        PRAGMA user_version = 1;
       `);
     } catch (e) {
       console.warn('Error running initSchema:', e);
@@ -169,7 +180,7 @@ class SqliteIndexService {
     }
 
     // Also populate fallbackDocs
-    this.fallbackDocs.set(projectId, {
+    this.fallbackDocs.set(JSON.stringify([projectId, 'project', projectId]), {
       doc_id: projectId,
       project_id: projectId,
       doc_type: 'project',
@@ -239,7 +250,7 @@ class SqliteIndexService {
       }
     }
 
-    this.fallbackDocs.set(ent.id, {
+    this.fallbackDocs.set(JSON.stringify([projectId, 'entity', ent.id]), {
       doc_id: ent.id,
       project_id: projectId,
       doc_type: 'entity',
@@ -288,7 +299,7 @@ class SqliteIndexService {
       }
     }
 
-    this.fallbackDocs.set(rel.id, {
+    this.fallbackDocs.set(JSON.stringify([projectId, 'relationship', rel.id]), {
       doc_id: rel.id,
       project_id: projectId,
       doc_type: 'relationship',
@@ -326,7 +337,7 @@ class SqliteIndexService {
       }
     }
 
-    this.fallbackDocs.set(src.id, {
+    this.fallbackDocs.set(JSON.stringify([projectId, 'source', src.id]), {
       doc_id: src.id,
       project_id: projectId,
       doc_type: 'source',
@@ -364,7 +375,7 @@ class SqliteIndexService {
       }
     }
 
-    this.fallbackDocs.set(note.id, {
+    this.fallbackDocs.set(JSON.stringify([projectId, 'note', note.id]), {
       doc_id: note.id,
       project_id: projectId,
       doc_type: 'note',
@@ -375,19 +386,13 @@ class SqliteIndexService {
     });
   }
 
-  public removeDoc(docId: string) {
+  public removeDoc(projectId: string, docId: string, type: 'entity' | 'relationship' | 'source' | 'note') {
+    const table = { entity: 'entities', relationship: 'relationships', source: 'sources', note: 'notes' }[type];
     if (this.db) {
-      try {
-        this.db.run(`DELETE FROM entities WHERE id = ?`, [docId]);
-        this.db.run(`DELETE FROM relationships WHERE id = ?`, [docId]);
-        this.db.run(`DELETE FROM sources WHERE id = ?`, [docId]);
-        this.db.run(`DELETE FROM notes WHERE id = ?`, [docId]);
-        this.db.run(`DELETE FROM search_documents WHERE doc_id = ?`, [docId]);
-      } catch (e) {
-        console.warn('removeDoc db error:', e);
-      }
+      this.db.run(`DELETE FROM ${table} WHERE project_id = ? AND id = ?`, [projectId, docId]);
+      this.db.run('DELETE FROM search_documents WHERE project_id = ? AND doc_type = ? AND doc_id = ?', [projectId, type, docId]);
     }
-    this.fallbackDocs.delete(docId);
+    this.fallbackDocs.delete(JSON.stringify([projectId, type, docId]));
   }
 
   public search(projectId: string, query: string): SearchResult[] {

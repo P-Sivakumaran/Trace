@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { availableImportId, readProjectArchive } from './projectArchive';
 import {
   Entity,
   GraphLayout,
@@ -190,7 +191,10 @@ export class BrowserStorageAdapter implements IStorageService {
   async createProject(name: string, description?: string, id?: string): Promise<Project> {
     await this.ensureInitialized();
     const now = new Date().toISOString();
-    const projectId = id || `project-${Date.now().toString(36)}`;
+    const projectId = id || `project-${crypto.randomUUID()}`;
+    if (localStorage.getItem(`${KEY_PROJECT_PREFIX}${projectId}`) !== null) {
+      throw new Error('A case with this identifier already exists');
+    }
 
     const project: Project = {
       id: projectId,
@@ -287,9 +291,9 @@ export class BrowserStorageAdapter implements IStorageService {
     });
 
     this.saveProjectDataToStorage(data);
-    sqliteIndexService.removeDoc(entityId);
+    sqliteIndexService.removeDoc(projectId, entityId, 'entity');
     for (const relId of removedRelIds) {
-      sqliteIndexService.removeDoc(relId);
+      sqliteIndexService.removeDoc(projectId, relId, 'relationship');
     }
     this.notifyListeners({ type: 'delete', targetType: 'entity', targetId: entityId });
   }
@@ -316,7 +320,7 @@ export class BrowserStorageAdapter implements IStorageService {
 
     data.relationships = data.relationships.filter((r) => r.id !== relId);
     this.saveProjectDataToStorage(data);
-    sqliteIndexService.removeDoc(relId);
+    sqliteIndexService.removeDoc(projectId, relId, 'relationship');
     this.notifyListeners({ type: 'delete', targetType: 'relationship', targetId: relId });
   }
 
@@ -351,7 +355,7 @@ export class BrowserStorageAdapter implements IStorageService {
     });
 
     this.saveProjectDataToStorage(data);
-    sqliteIndexService.removeDoc(sourceId);
+    sqliteIndexService.removeDoc(projectId, sourceId, 'source');
     for (const rel of touchedRels) {
       sqliteIndexService.indexRelationship(projectId, rel);
     }
@@ -382,7 +386,7 @@ export class BrowserStorageAdapter implements IStorageService {
 
     data.notes = data.notes.filter((n) => n.id !== noteId);
     this.saveProjectDataToStorage(data);
-    sqliteIndexService.removeDoc(noteId);
+    sqliteIndexService.removeDoc(projectId, noteId, 'note');
     this.notifyListeners({ type: 'delete', targetType: 'note', targetId: noteId });
   }
 
@@ -457,94 +461,21 @@ export class BrowserStorageAdapter implements IStorageService {
   }
 
   async importProjectZip(file: File | ArrayBuffer): Promise<string> {
-    const zip = await JSZip.loadAsync(file);
-
-    // Find project.md
-    let projectFile: JSZip.JSZipObject | null = null;
-    let basePrefix = '';
-
-    zip.forEach((relativePath, entry) => {
-      if (entry.name.endsWith('project.md') && !projectFile) {
-        projectFile = entry;
-        basePrefix = relativePath.slice(0, -'project.md'.length);
-      }
-    });
-
-    if (!projectFile) {
-      throw new Error('Invalid project zip: project.md not found');
-    }
-
-    const projectText = await (projectFile as JSZip.JSZipObject).async('string');
-    const parsedProject = parseProjectFile(projectText, `imported-${Date.now()}`);
-
-    const entities: Entity[] = [];
-    const relationships: Relationship[] = [];
-    const sources: Source[] = [];
-    const notes: Note[] = [];
-    let layout: GraphLayout = { positions: {} };
-
-    // Load entities
-    const entEntries = zip.file(new RegExp(`^${basePrefix}entities/.*\\.md$`));
-    for (const entry of entEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'ent';
-      entities.push(parseEntityFile(raw, filename));
-    }
-
-    // Load relationships
-    const relEntries = zip.file(new RegExp(`^${basePrefix}relationships/.*\\.md$`));
-    for (const entry of relEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'rel';
-      relationships.push(parseRelationshipFile(raw, filename));
-    }
-
-    // Load sources
-    const srcEntries = zip.file(new RegExp(`^${basePrefix}sources/.*\\.md$`));
-    for (const entry of srcEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'src';
-      sources.push(parseSourceFile(raw, filename));
-    }
-
-    // Load notes
-    const noteEntries = zip.file(new RegExp(`^${basePrefix}notes/.*\\.md$`));
-    for (const entry of noteEntries) {
-      const raw = await entry.async('string');
-      const filename = entry.name.split('/').pop()?.replace('.md', '') || 'note';
-      notes.push(parseNoteFile(raw, filename));
-    }
-
-    // Layout if present
-    const layoutEntry = zip.file(`${basePrefix}graph-layout.json`);
-    if (layoutEntry) {
-      try {
-        const layoutRaw = await layoutEntry.async('string');
-        layout = JSON.parse(layoutRaw);
-      } catch (err) {
-        console.warn('Could not parse graph layout:', err);
-      }
-    }
-
-    const importedData: ProjectData = {
-      project: parsedProject,
-      entities,
-      relationships,
-      sources,
-      notes,
-    };
-
-    this.saveProjectDataToStorage(importedData);
-    await this.saveGraphLayout(parsedProject.id, layout);
-    sqliteIndexService.rebuildIndex(importedData);
-
-    // Switch active project
-    const ws = await this.getWorkspace();
-    ws.activeProjectId = parsedProject.id;
-    await this.saveWorkspace(ws);
-
-    this.notifyListeners({ type: 'create', targetType: 'project', targetId: parsedProject.id });
-    return parsedProject.id;
+    await this.ensureInitialized();
+    const { data, layout } = await readProjectArchive(file);
+    // Include unreadable saved records: an import must not overwrite recoverable raw data.
+    const occupied = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i))
+      .filter((key): key is string => key !== null && key.startsWith(KEY_PROJECT_PREFIX))
+      .map((key) => key.slice(KEY_PROJECT_PREFIX.length));
+    data.project.id = availableImportId(data.project.id, occupied);
+    this.saveProjectDataToStorage(data);
+    await this.saveGraphLayout(data.project.id, layout);
+    sqliteIndexService.rebuildIndex(data);
+    const workspace = await this.getWorkspace();
+    workspace.activeProjectId = data.project.id;
+    await this.saveWorkspace(workspace);
+    this.notifyListeners({ type: 'create', targetType: 'project', targetId: data.project.id });
+    return data.project.id;
   }
 
   async openInExplorer(projectId?: string): Promise<boolean> {
