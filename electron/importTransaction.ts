@@ -9,6 +9,7 @@ import {
   serializeRelationshipFile,
   serializeSourceFile,
 } from '../src/services/markdownParser.js';
+import { inside } from './recon/paths.js';
 
 const STAGING_DIRNAME = '.trace-import-staging';
 
@@ -27,11 +28,13 @@ export async function transactionalImport(
   data.project.id = availableImportId(data.project.id, existingProjectIds);
   const id = data.project.id;
 
-  const projectsDir = path.resolve(workspacePath, 'projects');
-  const stagingRoot = path.join(workspacePath, STAGING_DIRNAME);
+  // Routed through inside() like every other filesystem entry point (getProjectDir,
+  // sanitizeRelativePath, projects:list): reject a symlinked projects/ or staging root.
+  const projectsDir = inside(workspacePath, path.join(workspacePath, 'projects'));
+  const stagingRoot = inside(workspacePath, path.join(workspacePath, STAGING_DIRNAME));
   fs.mkdirSync(projectsDir, { recursive: true });
   fs.mkdirSync(stagingRoot, { recursive: true });
-  const stagingDir = path.join(stagingRoot, randomUUID());
+  const stagingDir = inside(stagingRoot, path.join(stagingRoot, randomUUID()));
 
   try {
     fs.mkdirSync(stagingDir);
@@ -57,7 +60,7 @@ export async function transactionalImport(
     // Written last: project.md's presence is what projects:list treats as "this is a case".
     fs.writeFileSync(path.join(stagingDir, 'project.md'), serializeProjectFile(data.project));
 
-    const projectDir = path.join(projectsDir, id);
+    const projectDir = inside(projectsDir, path.join(projectsDir, id));
     if (fs.existsSync(projectDir)) throw new Error(`A case with id "${id}" already exists`);
     fs.renameSync(stagingDir, projectDir);
   } catch (err) {
@@ -69,5 +72,11 @@ export async function transactionalImport(
 
 /** Discards staging left behind by an import that never finished its rename (crash, force-quit). */
 export function cleanupOrphanedImports(workspacePath: string): void {
-  fs.rmSync(path.join(workspacePath, STAGING_DIRNAME), { recursive: true, force: true });
+  let stagingRoot: string;
+  try {
+    stagingRoot = inside(workspacePath, path.join(workspacePath, STAGING_DIRNAME));
+  } catch {
+    return;
+  }
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
 }

@@ -448,7 +448,7 @@ function setupIpcHandlers() {
 
   // Projects: Import (atomic — stages in full before the case becomes visible)
   handle('projects:importZip', async (_event, buffer: ArrayBuffer) => {
-    const projectsDir = path.resolve(currentWorkspacePath, 'projects');
+    const projectsDir = inside(currentWorkspacePath, path.join(currentWorkspacePath, 'projects'));
     ensureDirSync(projectsDir);
     const existingIds = fs
       .readdirSync(projectsDir, { withFileTypes: true })
