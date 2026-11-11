@@ -10,6 +10,7 @@ import {
   RELATIONSHIP_STATUSES,
 } from '@/types';
 import { EntityIcon, getEntityTypeColor, getEntityTypeLabel } from '@/components/common/EntityIcon';
+import { findSpatialCandidate, type Direction } from './spatialNavigation';
 import { StatusGlyph } from '@/components/common/StatusBadge';
 import {
   Maximize2,
@@ -1945,6 +1946,78 @@ export const GraphView: React.FC<GraphViewProps> = ({
     cy.elements().removeClass('highlighted faded');
   };
 
+  // Keyboard-reachable node list. Cytoscape renders every node to a <canvas>, so without this
+  // there is no DOM focus target for any node and no way to select, open or delete one without a
+  // mouse. This is a screen-reader-only roving-tabindex proxy, not a visible control: sighted
+  // keyboard users get their feedback from focusNodeNeighborhood's highlight-and-pan below.
+  // No documented composite role (grid/tablist/combobox/listbox/tree/treegrid) matches a free
+  // node-link graph exactly; listbox/option is the closest fit and makes no WCAG claim beyond that.
+  const navigableNodes = useMemo(
+    () =>
+      elements
+        .filter((el) => el.group === 'nodes')
+        .map((el) => ({
+          id: el.data.id as string,
+          label: (el.data.label as string) || (el.data.id as string),
+          isNote: Boolean(el.data.isNote),
+        })),
+    [elements]
+  );
+  const [keyboardFocusedNodeId, setKeyboardFocusedNodeId] = useState<string | null>(null);
+  const nodeListRef = useRef<HTMLDivElement>(null);
+
+  const handleNodeListFocus = (id: string) => {
+    setKeyboardFocusedNodeId(id);
+    focusNodeNeighborhood(id);
+  };
+
+  const handleNodeListKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, id: string, isNote: boolean) => {
+    const directionKeys: Record<string, Direction> = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right',
+    };
+    const direction = directionKeys[e.key];
+    if (direction) {
+      // Never intercept a modified key or a transition the live geometry can't support; let the
+      // browser scroll natively instead (spatial-navigation guidance).
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const cy = cyRef.current;
+      if (!cy) return;
+      const currentNode = cy.getElementById(id);
+      if (currentNode.empty()) return;
+      const box = currentNode.renderedBoundingBox();
+      const candidates = cy.nodes().map((node) => {
+        const b = node.renderedBoundingBox();
+        return { id: node.id(), rect: { left: b.x1, right: b.x2, top: b.y1, bottom: b.y2 } };
+      });
+      const nextId = findSpatialCandidate(
+        { id, rect: { left: box.x1, right: box.x2, top: box.y1, bottom: box.y2 } },
+        candidates,
+        direction
+      );
+      if (!nextId) return;
+      e.preventDefault();
+      nodeListRef.current?.querySelector<HTMLButtonElement>(`[data-node-option="${nextId}"]`)?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (isNote) onOpenNote?.(id);
+      else {
+        onSelectEntity(id);
+        onOpenEntity(id);
+      }
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (isNote) onDeleteNote?.(id);
+      else onDeleteEntity(id);
+    }
+  };
+
   // Search in Graph
   const handleGraphSearch = (query: string) => {
     setSearchQuery(query);
@@ -2283,6 +2356,24 @@ export const GraphView: React.FC<GraphViewProps> = ({
         onDrop={handleCanvasDrop}
         className={`w-full h-full ${(isConnectKeyPressed || isConnectModeActive) ? 'cursor-crosshair' : ''}`}
       />
+
+      {/* Keyboard-only node access: Cytoscape nodes have no DOM focus target otherwise. */}
+      <div ref={nodeListRef} role="listbox" aria-label="Graph nodes" className="sr-only">
+        {navigableNodes.map((node) => (
+          <button
+            key={node.id}
+            type="button"
+            data-node-option={node.id}
+            role="option"
+            aria-selected={keyboardFocusedNodeId === node.id}
+            tabIndex={(keyboardFocusedNodeId ?? navigableNodes[0]?.id) === node.id ? 0 : -1}
+            onFocus={() => handleNodeListFocus(node.id)}
+            onKeyDown={(e) => handleNodeListKeyDown(e, node.id, node.isNote)}
+          >
+            {node.label}
+          </button>
+        ))}
+      </div>
 
       {/* Maltego Entity Palette */}
       <EntityPalette
